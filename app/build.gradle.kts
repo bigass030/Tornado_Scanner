@@ -8,7 +8,7 @@ android {
 
     defaultConfig {
         applicationId = "com.example.behrouz_test"
-        minSdk = 24
+        minSdk = 21
         targetSdk = 35
         versionCode = 1
         versionName = "1.0"
