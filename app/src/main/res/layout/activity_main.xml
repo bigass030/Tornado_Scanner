@@ -6,11 +6,9 @@
     android:orientation="vertical"
     android:background="#FAFAFA">
 
-    <!-- TOP 50%: your existing fields -->
     <ScrollView
         android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
+        android:layout_height="match_parent"
         android:fillViewport="true">
 
         <LinearLayout
@@ -19,49 +17,67 @@
             android:orientation="vertical"
             android:padding="24dp">
 
-            <!-- Row 1: Artikel-Nr -->
+            <!-- Row 1: Artikel-Nr + Einheit -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="24dp">
+                android:layout_marginBottom="20dp">
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="50dp"
+                    android:layout_height="72dp"
                     android:gravity="center_vertical"
                     android:text="Artikel-Nr"
-                    android:textSize="16sp"
+                    android:textSize="18sp"
                     android:layout_marginEnd="12dp"/>
 
                 <EditText
                     android:id="@+id/inputField"
                     android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="50dp"
+                    android:layout_weight="0.8"
+                    android:layout_height="72dp"
                     android:hint="Artikel einscannen"
                     android:textColor="#000000"
                     android:background="@android:drawable/editbox_background"
                     android:inputType="text"
                     android:importantForAutofill="no"
-                    android:padding="12dp"
-                    android:textSize="18sp"
+                    android:padding="16dp"
+                    android:textSize="20sp"
                     android:imeOptions="actionDone"/>
+
+                <EditText
+                    android:id="@+id/meField"
+                    android:layout_width="0dp"
+                    android:layout_weight="0.2"
+                    android:layout_height="72dp"
+                    android:layout_marginStart="12dp"
+                    android:background="#EEEEEE"
+                    android:padding="16dp"
+                    android:textSize="20sp"
+                    android:textColor="#444444"
+                    android:gravity="center"
+                    android:inputType="textNoSuggestions"
+                    android:importantForAutofill="no"
+                    android:focusable="false"
+                    android:cursorVisible="false"
+                    android:longClickable="false"
+                    android:clickable="false"/>
             </LinearLayout>
 
-            <!-- Row 2: Artikelname -->
+            <!-- Row 2: Benennung -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="24dp">
+                android:layout_marginBottom="20dp">
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="50dp"
+                    android:layout_height="72dp"
                     android:gravity="center_vertical"
                     android:text="Benennung"
-                    android:textSize="16sp"
+                    android:textSize="18sp"
                     android:layout_marginEnd="12dp"/>
 
                 <EditText
@@ -69,13 +85,13 @@
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="wrap_content"
+                    android:minHeight="72dp"
                     android:inputType="textMultiLine|textNoSuggestions"
                     android:singleLine="false"
                     android:maxLines="3"
-                    android:minHeight="50dp"
                     android:background="#EEEEEE"
-                    android:padding="12dp"
-                    android:textSize="18sp"
+                    android:padding="16dp"
+                    android:textSize="20sp"
                     android:textColor="#444444"
                     android:focusable="false"
                     android:cursorVisible="false"
@@ -83,162 +99,107 @@
                     android:clickable="false"/>
             </LinearLayout>
 
-            <!-- Row 5: Mengeneinheit -->
+            <!-- Row 3: von (dropdown) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="24dp">
+                android:layout_marginBottom="20dp">
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="50dp"
-                    android:gravity="center_vertical"
-                    android:text="Einheit"
-                    android:textSize="16sp"
-                    android:layout_marginEnd="12dp"/>
-
-                <EditText
-                    android:id="@+id/meField"
-                    android:inputType="textNoSuggestions"
-                    android:importantForAutofill="no"
-                    android:layout_width="0dp"
-                    android:layout_weight="1"
-                    android:layout_height="50dp"
-                    android:background="#EEEEEE"
-                    android:padding="12dp"
-                    android:textSize="18sp"
-                    android:textColor="#444444"
-                    android:focusable="false"
-                    android:cursorVisible="false"
-                    android:longClickable="false"
-                    android:clickable="false"/>
-            </LinearLayout>
-
-            <!-- Row 3: von -->
-            <LinearLayout
-                android:layout_width="match_parent"
-                android:layout_height="wrap_content"
-                android:orientation="horizontal"
-                android:layout_marginBottom="24dp">
-
-                <TextView
-                    android:layout_width="120dp"
-                    android:layout_height="50dp"
+                    android:layout_height="72dp"
                     android:gravity="center_vertical"
                     android:text="von"
-                    android:textSize="16sp"
+                    android:textSize="18sp"
                     android:layout_marginEnd="12dp"/>
 
-                <EditText
+                <AutoCompleteTextView
                     android:id="@+id/lagerField"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="50dp"
+                    android:layout_height="72dp"
                     android:background="#EEEEEE"
-                    android:padding="12dp"
-                    android:textSize="18sp"
+                    android:padding="16dp"
+                    android:textSize="20sp"
                     android:textColor="#444444"
-
-                    android:focusable="true"
-                    android:focusableInTouchMode="true"
-                    android:clickable="true"
-                    android:cursorVisible="false"
-                    android:longClickable="false"
-                    android:inputType="none"/>
+                    android:inputType="none"
+                    android:completionThreshold="0"/>
             </LinearLayout>
 
-            <!-- Row 4: nach -->
+            <!-- Row 4: nach (text input, Next -> Menge) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="24dp">
+                android:layout_marginBottom="20dp">
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="50dp"
+                    android:layout_height="72dp"
                     android:gravity="center_vertical"
                     android:text="nach"
-                    android:textSize="16sp"
+                    android:textSize="18sp"
                     android:layout_marginEnd="12dp"/>
 
                 <EditText
                     android:id="@+id/bestandField"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="50dp"
-                    android:background="#EEEEEE"
-                    android:padding="12dp"
-                    android:textSize="18sp"
-                    android:textColor="#444444"
-                    android:focusable="false"
-                    android:cursorVisible="false"
-                    android:longClickable="false"
-                    android:clickable="false"/>
+                    android:layout_height="72dp"
+                    android:background="@android:drawable/editbox_background"
+                    android:padding="16dp"
+                    android:textSize="20sp"
+                    android:textColor="#000000"
+                    android:importantForAutofill="no"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:inputType="text"
+                    android:imeOptions="actionNext"/>
             </LinearLayout>
 
-            <!-- Row 6: Menge -->
+            <!-- Row 5: Menge (numeric input) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="24dp">
+                android:layout_marginBottom="28dp">
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="50dp"
+                    android:layout_height="72dp"
                     android:gravity="center_vertical"
                     android:text="Menge"
-                    android:textSize="16sp"
+                    android:textSize="18sp"
                     android:layout_marginEnd="12dp"/>
 
                 <EditText
                     android:id="@+id/menge"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="50dp"
-                    android:background="#EEEEEE"
-                    android:padding="12dp"
-                    android:textSize="18sp"
-                    android:textColor="#444444"
-                    android:focusable="false"
-                    android:cursorVisible="false"
-                    android:longClickable="false"
-                    android:clickable="false"/>
+                    android:layout_height="72dp"
+                    android:background="@android:drawable/editbox_background"
+                    android:padding="16dp"
+                    android:textSize="20sp"
+                    android:textColor="#000000"
+                    android:importantForAutofill="no"
+                    android:focusable="true"
+                    android:focusableInTouchMode="true"
+                    android:inputType="numberDecimal"
+                    android:imeOptions="actionDone"/>
             </LinearLayout>
 
             <Button
                 android:id="@+id/clearButton"
                 android:layout_width="match_parent"
-                android:layout_height="wrap_content"
+                android:layout_height="72dp"
                 android:text="Neueingabe"
                 android:backgroundTint="#1E90FF"
                 android:textColor="#FFFFFF"
-                android:textSize="18sp"
-                android:layout_marginTop="24dp"
-                android:padding="16dp"/>
+                android:textSize="20sp"
+                android:layout_marginTop="8dp"/>
 
         </LinearLayout>
     </ScrollView>
-
-    <!-- BOTTOM 50%: option panel for "von" (hidden until von is focused) -->
-    <LinearLayout
-        android:id="@+id/vonOptionsPanel"
-        android:layout_width="match_parent"
-        android:layout_height="0dp"
-        android:layout_weight="1"
-        android:orientation="vertical"
-        android:padding="12dp"
-        android:visibility="gone">
-
-        <GridLayout
-            android:id="@+id/vonGrid"
-            android:layout_width="match_parent"
-            android:layout_height="match_parent"
-            android:columnCount="1"
-            android:rowCount="5"
-            android:useDefaultMargins="true"/>
-    </LinearLayout>
 
 </LinearLayout>

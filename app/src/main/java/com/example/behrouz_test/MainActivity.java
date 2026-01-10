@@ -1,36 +1,41 @@
 package com.example.behrouz_test;
 
+import android.content.Context;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.View;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.ArrayAdapter;
+import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
-import android.widget.GridLayout;
-import android.widget.LinearLayout;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
 
+import org.json.JSONArray;
+import org.json.JSONObject;
+
 import java.io.BufferedReader;
+import java.io.InputStream;
 import java.io.InputStreamReader;
-import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
+import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 
 public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "HTTP_CALL";
 
-    private EditText inputField, nameField, lagerField, bestandField, meField, mengeField;
+    private EditText inputField, nameField, bestandField, meField, mengeField;
+    private AutoCompleteTextView lagerField; // "von"
 
-    // Bottom panel for "von" options
-    private LinearLayout vonOptionsPanel;
-    private GridLayout vonGrid;
+    private final List<String> currentLagerOptions = new ArrayList<>();
+    private ArrayAdapter<String> lagerAdapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -39,39 +44,57 @@ public class MainActivity extends AppCompatActivity {
 
         inputField = findViewById(R.id.inputField);
         nameField = findViewById(R.id.nameField);
-        lagerField = findViewById(R.id.lagerField);       // "von"
-        bestandField = findViewById(R.id.bestandField);   // "nach"
+        lagerField = findViewById(R.id.lagerField);
+        bestandField = findViewById(R.id.bestandField); // "nach"
         meField = findViewById(R.id.meField);
-        mengeField = findViewById(R.id.menge);
+        mengeField = findViewById(R.id.menge);          // "Menge"
 
-        vonOptionsPanel = findViewById(R.id.vonOptionsPanel);
-        vonGrid = findViewById(R.id.vonGrid);
-
-        // Keep keyboard hidden initially
+        // Start with keyboard hidden; we open it only on input fields
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
-        // Ensure "von" does not bring keyboard even if user taps it
+        lagerAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, currentLagerOptions);
+        lagerField.setAdapter(lagerAdapter);
+
+        // No typing for "von"
         lagerField.setShowSoftInputOnFocus(false);
 
-        // When "von" gains focus, show options panel and populate buttons
         lagerField.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) {
-                showVonOptions(getVonOptionsForCurrentArticle());
-            } else {
-                hideVonOptions();
+            if (hasFocus) showVonDropdownIfPossible();
+        });
+        lagerField.setOnClickListener(v -> showVonDropdownIfPossible());
+
+        // After selecting "von" -> go to "nach" and open keyboard
+        lagerField.setOnItemClickListener((parent, view, position, id) -> {
+            String selected = (String) parent.getItemAtPosition(position);
+            lagerField.setText(selected, false);
+
+            bestandField.requestFocus();
+            showKeyboard(bestandField);
+        });
+
+        // When user presses "Next" on "nach" -> jump to Menge and show numeric keyboard
+        bestandField.setOnEditorActionListener((v, actionId, event) -> {
+            if (actionId == EditorInfo.IME_ACTION_NEXT) {
+                mengeField.requestFocus();
+                showKeyboard(mengeField);
+                return true;
             }
+            return false;
         });
 
-        // Also show the options when user taps "von"
-        lagerField.setOnClickListener(v -> {
-            lagerField.requestFocus();
-            showVonOptions(getVonOptionsForCurrentArticle());
+        // When Menge gains focus -> ensure keyboard is shown (numeric keyboard is controlled by XML inputType)
+        mengeField.setOnFocusChangeListener((v, hasFocus) -> {
+            if (hasFocus) showKeyboard(mengeField);
         });
 
-        // Scan / enter Artikel-Nr, then HTTP call
+        // Scan Artikel-Nr -> HTTP call
         inputField.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_NULL) {
                 String inputText = inputField.getText().toString().trim();
+                if (inputText.isEmpty()) {
+                    Toast.makeText(this, "Bitte Artikel-Nr scannen", Toast.LENGTH_SHORT).show();
+                    return true;
+                }
                 new Thread(() -> makeHttpRequest(inputText)).start();
                 return true;
             }
@@ -81,128 +104,119 @@ public class MainActivity extends AppCompatActivity {
         inputField.requestFocus();
 
         Button clearButton = findViewById(R.id.clearButton);
-        clearButton.setOnClickListener(v -> {
-            inputField.setText("");
-            nameField.setText("");
-            lagerField.setText("");
-            bestandField.setText("");
-            meField.setText("");
-            mengeField.setText("");
+        clearButton.setOnClickListener(v -> clearAllAndFocus());
+    }
 
-            hideVonOptions();
-            inputField.requestFocus();
+    private void clearAllAndFocus() {
+        inputField.setText("");
+        nameField.setText("");
+        lagerField.setText("");
+        bestandField.setText("");
+        meField.setText("");
+        mengeField.setText("");
+
+        currentLagerOptions.clear();
+        lagerAdapter.notifyDataSetChanged();
+
+        inputField.requestFocus();
+    }
+
+    private void showVonDropdownIfPossible() {
+        if (currentLagerOptions.isEmpty()) {
+            Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
+            return;
+        }
+        lagerField.setThreshold(0);
+        lagerField.showDropDown();
+    }
+
+    private void showKeyboard(EditText field) {
+        field.post(() -> {
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm != null) imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
         });
     }
 
-    /**
-     * This currently returns demo values.
-     * Later you will return a dynamic list based on Artikel-Nr (or HTTP response).
-     */
-    private List<String> getVonOptionsForCurrentArticle() {
-        // Change 5 -> 10 later if you want 10 items
-        return Arrays.asList("A1", "A2", "A3", "B1", "B2");
-    }
+    private void makeHttpRequest(String textToSend) {
+        HttpURLConnection connection = null;
 
-    private void showVonOptions(List<String> options) {
-        // Make bottom half visible
-        vonOptionsPanel.setVisibility(View.VISIBLE);
-
-        // Clear old buttons
-        vonGrid.removeAllViews();
-
-        // Grid settings: 1 column (vertical list) by default from XML.
-        // If you want 2 columns later, set columnCount=2 in XML and adjust sizes.
-
-        int buttonHeightPx = dpToPx(56);
-
-        for (String option : options) {
-            Button b = new Button(this);
-            b.setAllCaps(false);
-            b.setText(option);
-
-            GridLayout.LayoutParams lp = new GridLayout.LayoutParams();
-            lp.width = GridLayout.LayoutParams.MATCH_PARENT;
-            lp.height = buttonHeightPx;
-            lp.setMargins(dpToPx(6), dpToPx(6), dpToPx(6), dpToPx(6));
-            b.setLayoutParams(lp);
-
-            b.setOnClickListener(v -> {
-                // Fill "von"
-                lagerField.setText(option);
-
-                // Hide panel after selection (so user sees the form again)
-                hideVonOptions();
-
-                // Move to next step: focus "nach" (or Menge later)
-                // Your "nach" is currently not focusable in XML; when you enable it,
-                // you can requestFocus here. For now, just keep it as a placeholder.
-                // bestandField.requestFocus();
-            });
-
-            vonGrid.addView(b);
-        }
-    }
-
-    private void hideVonOptions() {
-        vonOptionsPanel.setVisibility(View.GONE);
-        vonGrid.removeAllViews();
-    }
-
-    private int dpToPx(int dp) {
-        float density = getResources().getDisplayMetrics().density;
-        return Math.round(dp * density);
-    }
-
-    private void makeHttpRequest(String numberToSend) {
         try {
-            String targetUrl = "http://10.0.20.26:8080/get_art";
-            Log.i(TAG, "Trying to connect to " + targetUrl);
+            String encoded = URLEncoder.encode(textToSend, StandardCharsets.UTF_8.name());
+            String targetUrl = "http://10.0.20.26:8080/artikel?text=" + encoded;
+
+            Log.i(TAG, "Connecting to: " + targetUrl);
 
             URL url = new URL(targetUrl);
-            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
-            connection.setRequestMethod("POST");
-            connection.setDoOutput(true);
-            connection.setRequestProperty("Content-Type", "text/plain; charset=UTF-8");
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("GET");
+            connection.setConnectTimeout(7000);
+            connection.setReadTimeout(7000);
 
-            try (OutputStream os = connection.getOutputStream()) {
-                os.write(numberToSend.getBytes(StandardCharsets.UTF_8));
+            int responseCode = connection.getResponseCode();
+
+            InputStream stream = (responseCode >= 400)
+                    ? connection.getErrorStream()
+                    : connection.getInputStream();
+
+            String responseBody = readAll(stream);
+            Log.i(TAG, "HTTP " + responseCode + " body: " + responseBody);
+
+            if (responseCode >= 400) {
+                runOnUiThread(() ->
+                        Toast.makeText(this, "Server-Fehler HTTP " + responseCode, Toast.LENGTH_LONG).show()
+                );
+                return;
             }
 
-            BufferedReader in = new BufferedReader(
-                    new InputStreamReader(connection.getInputStream())
-            );
-            String inputLine;
-            StringBuilder response = new StringBuilder();
+            JSONObject obj = new JSONObject(responseBody);
 
-            while ((inputLine = in.readLine()) != null) {
-                response.append(inputLine);
+            String benennung = obj.optString("benennung", "");
+            String me = obj.optString("me", "");
+
+            List<String> newOptions = new ArrayList<>();
+            JSONArray lagers = obj.optJSONArray("lagernr");
+            if (lagers != null) {
+                for (int i = 0; i < lagers.length(); i++) {
+                    String val = lagers.optString(i, "").trim();
+                    if (!val.isEmpty()) newOptions.add(val);
+                }
             }
-            in.close();
-
-            String responseBody = response.toString();
-            String[] parts = responseBody.split("\\|");
-
-            String name = parts[0];
-            String lager  = parts[1];
-            String bestand = "" + (Double.parseDouble(parts[2]) + Double.parseDouble(parts[3]) + Double.parseDouble(parts[4]));
-            String me = parts[5];
 
             runOnUiThread(() -> {
-                nameField.setText(name);
-                lagerField.setText(lager);       // this is currently your server value; you can keep or clear it
-                bestandField.setText(bestand);
+                nameField.setText(benennung);
                 meField.setText(me);
 
-                // USER-FRIENDLY FLOW:
-                // After scan, immediately focus "von" so the option panel opens
-                lagerField.requestFocus(); // triggers showVonOptions via focus listener
+                currentLagerOptions.clear();
+                currentLagerOptions.addAll(newOptions);
+                lagerAdapter.notifyDataSetChanged();
+
+                // reset user inputs
+                lagerField.setText("");
+                bestandField.setText("");
+                mengeField.setText("");
+
+                // go to "von" and open dropdown
+                lagerField.requestFocus();
+                showVonDropdownIfPossible();
             });
 
         } catch (Exception e) {
-            Log.e(TAG, "Exception occurred", e);
+            Log.e(TAG, "HTTP/JSON Exception", e);
             runOnUiThread(() ->
                     Toast.makeText(this, "Ungültig: " + e.getMessage(), Toast.LENGTH_LONG).show()
             );
+        } finally {
+            if (connection != null) connection.disconnect();
         }
+    }
+
+    private String readAll(InputStream stream) throws Exception {
+        if (stream == null) return "";
+        BufferedReader in = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
+        StringBuilder sb = new StringBuilder();
+        String line;
+        while ((line = in.readLine()) != null) sb.append(line);
+        in.close();
+        return sb.toString();
     }
 }
