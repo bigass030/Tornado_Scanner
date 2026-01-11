@@ -99,7 +99,7 @@
                     android:clickable="false"/>
             </LinearLayout>
 
-            <!-- Row 3: von (dropdown) -->
+            <!-- Row 3: von (Spinner dropdown) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -114,20 +114,16 @@
                     android:textSize="18sp"
                     android:layout_marginEnd="12dp"/>
 
-                <AutoCompleteTextView
-                    android:id="@+id/lagerField"
+                <Spinner
+                    android:id="@+id/lagerSpinner"
                     android:layout_width="0dp"
                     android:layout_weight="1"
                     android:layout_height="72dp"
                     android:background="#EEEEEE"
-                    android:padding="16dp"
-                    android:textSize="20sp"
-                    android:textColor="#444444"
-                    android:inputType="none"
-                    android:completionThreshold="0"/>
+                    android:padding="8dp" />
             </LinearLayout>
 
-            <!-- Row 4: nach (text input, Next -> Menge) -->
+            <!-- Row 4: nach -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -158,7 +154,7 @@
                     android:imeOptions="actionNext"/>
             </LinearLayout>
 
-            <!-- Row 5: Menge (numeric input) -->
+            <!-- Row 5: Menge (numeric) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"

@@ -7,9 +7,9 @@ import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
-import android.widget.AutoCompleteTextView;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.Spinner;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -32,10 +32,13 @@ public class MainActivity extends AppCompatActivity {
     private static final String TAG = "HTTP_CALL";
 
     private EditText inputField, nameField, bestandField, meField, mengeField;
-    private AutoCompleteTextView lagerField; // "von"
+    private Spinner lagerSpinner;
 
     private final List<String> currentLagerOptions = new ArrayList<>();
     private ArrayAdapter<String> lagerAdapter;
+
+    // Prevent “auto-selected first item” from triggering jump immediately after loading data
+    private boolean suppressNextJump = false;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -44,35 +47,30 @@ public class MainActivity extends AppCompatActivity {
 
         inputField = findViewById(R.id.inputField);
         nameField = findViewById(R.id.nameField);
-        lagerField = findViewById(R.id.lagerField);
-        bestandField = findViewById(R.id.bestandField); // "nach"
         meField = findViewById(R.id.meField);
-        mengeField = findViewById(R.id.menge);          // "Menge"
+        lagerSpinner = findViewById(R.id.lagerSpinner);
+        bestandField = findViewById(R.id.bestandField);
+        mengeField = findViewById(R.id.menge);
 
-        // Start with keyboard hidden; we open it only on input fields
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
-        lagerAdapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1, currentLagerOptions);
-        lagerField.setAdapter(lagerAdapter);
+        lagerAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, currentLagerOptions);
+        lagerSpinner.setAdapter(lagerAdapter);
 
-        // No typing for "von"
-        lagerField.setShowSoftInputOnFocus(false);
+        lagerSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
+                if (suppressNextJump) return;
 
-        lagerField.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) showVonDropdownIfPossible();
-        });
-        lagerField.setOnClickListener(v -> showVonDropdownIfPossible());
+                // User selected "von" -> jump to "nach" and open keyboard
+                bestandField.requestFocus();
+                showKeyboard(bestandField);
+            }
 
-        // After selecting "von" -> go to "nach" and open keyboard
-        lagerField.setOnItemClickListener((parent, view, position, id) -> {
-            String selected = (String) parent.getItemAtPosition(position);
-            lagerField.setText(selected, false);
-
-            bestandField.requestFocus();
-            showKeyboard(bestandField);
+            @Override
+            public void onNothingSelected(android.widget.AdapterView<?> parent) { }
         });
 
-        // When user presses "Next" on "nach" -> jump to Menge and show numeric keyboard
         bestandField.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_NEXT) {
                 mengeField.requestFocus();
@@ -82,12 +80,10 @@ public class MainActivity extends AppCompatActivity {
             return false;
         });
 
-        // When Menge gains focus -> ensure keyboard is shown (numeric keyboard is controlled by XML inputType)
         mengeField.setOnFocusChangeListener((v, hasFocus) -> {
             if (hasFocus) showKeyboard(mengeField);
         });
 
-        // Scan Artikel-Nr -> HTTP call
         inputField.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_NULL) {
                 String inputText = inputField.getText().toString().trim();
@@ -110,24 +106,16 @@ public class MainActivity extends AppCompatActivity {
     private void clearAllAndFocus() {
         inputField.setText("");
         nameField.setText("");
-        lagerField.setText("");
-        bestandField.setText("");
         meField.setText("");
+        bestandField.setText("");
         mengeField.setText("");
 
+        suppressNextJump = true;
         currentLagerOptions.clear();
         lagerAdapter.notifyDataSetChanged();
+        suppressNextJump = false;
 
         inputField.requestFocus();
-    }
-
-    private void showVonDropdownIfPossible() {
-        if (currentLagerOptions.isEmpty()) {
-            Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
-            return;
-        }
-        lagerField.setThreshold(0);
-        lagerField.showDropDown();
     }
 
     private void showKeyboard(EditText field) {
@@ -135,6 +123,11 @@ public class MainActivity extends AppCompatActivity {
             InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
             if (imm != null) imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
         });
+    }
+
+    private void openSpinnerAutomatically() {
+        // Open spinner dropdown reliably after UI updates
+        lagerSpinner.post(() -> lagerSpinner.performClick());
     }
 
     private void makeHttpRequest(String textToSend) {
@@ -186,18 +179,27 @@ public class MainActivity extends AppCompatActivity {
                 nameField.setText(benennung);
                 meField.setText(me);
 
+                bestandField.setText("");
+                mengeField.setText("");
+
+                // Update spinner list without immediately triggering the jump
+                suppressNextJump = true;
                 currentLagerOptions.clear();
                 currentLagerOptions.addAll(newOptions);
                 lagerAdapter.notifyDataSetChanged();
 
-                // reset user inputs
-                lagerField.setText("");
-                bestandField.setText("");
-                mengeField.setText("");
+                // Reset selection
+                if (!currentLagerOptions.isEmpty()) {
+                    lagerSpinner.setSelection(0, false);
+                }
+                suppressNextJump = false;
 
-                // go to "von" and open dropdown
-                lagerField.requestFocus();
-                showVonDropdownIfPossible();
+                // Open dropdown automatically (no extra tap)
+                if (currentLagerOptions.isEmpty()) {
+                    Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
+                } else {
+                    openSpinnerAutomatically();
+                }
             });
 
         } catch (Exception e) {
