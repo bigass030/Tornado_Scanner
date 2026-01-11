@@ -1,8 +1,11 @@
 package com.example.behrouz_test;
 
 import android.content.Context;
+import android.graphics.Typeface;
 import android.os.Bundle;
 import android.util.Log;
+import android.view.View;
+import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
@@ -10,6 +13,7 @@ import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
 import android.widget.Spinner;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -24,6 +28,7 @@ import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.text.DecimalFormat;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -34,11 +39,15 @@ public class MainActivity extends AppCompatActivity {
     private EditText inputField, nameField, bestandField, meField, mengeField;
     private Spinner lagerSpinner;
 
-    private final List<String> currentLagerOptions = new ArrayList<>();
-    private ArrayAdapter<String> lagerAdapter;
+    // NEW: store objects, not strings
+    private final List<LagerItem> currentLagerItems = new ArrayList<>();
+    private ArrayAdapter<LagerItem> lagerAdapter;
 
     // Prevent “auto-selected first item” from triggering jump immediately after loading data
     private boolean suppressNextJump = false;
+
+    // For pretty numbers like "6" or "3.5"
+    private final DecimalFormat df = new DecimalFormat("0.##");
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -54,12 +63,27 @@ public class MainActivity extends AppCompatActivity {
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
-        lagerAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, currentLagerOptions);
+        // Custom adapter that aligns columns with monospace formatting
+        lagerAdapter = new ArrayAdapter<LagerItem>(this, android.R.layout.simple_spinner_dropdown_item, currentLagerItems) {
+            @Override
+            public View getView(int position, View convertView, ViewGroup parent) {
+                TextView tv = (TextView) super.getView(position, convertView, parent);
+                applyAlignedText(tv, getItem(position));
+                return tv;
+            }
+
+            @Override
+            public View getDropDownView(int position, View convertView, ViewGroup parent) {
+                TextView tv = (TextView) super.getDropDownView(position, convertView, parent);
+                applyAlignedText(tv, getItem(position));
+                return tv;
+            }
+        };
         lagerSpinner.setAdapter(lagerAdapter);
 
         lagerSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override
-            public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
+            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
                 if (suppressNextJump) return;
 
                 // User selected "von" -> jump to "nach" and open keyboard
@@ -103,6 +127,25 @@ public class MainActivity extends AppCompatActivity {
         clearButton.setOnClickListener(v -> clearAllAndFocus());
     }
 
+    private void applyAlignedText(TextView tv, LagerItem item) {
+        if (tv == null || item == null) return;
+
+        // Make alignment stable across devices by using monospace font.
+        tv.setTypeface(Typeface.MONOSPACE);
+
+        // Format: lagernr padded to fixed width + a few spaces + bestand
+        // Adjust the width number (e.g. 10/12/14) depending on your typical lagernr length.
+        String l = item.lagernr == null ? "" : item.lagernr.trim();
+
+        String b = df.format(item.bestand);
+
+        // %-12s means left-align in 12-character field.
+        String text = String.format("%-12s    %s", l, b);
+
+        tv.setText(text);
+        tv.setSingleLine(true);
+    }
+
     private void clearAllAndFocus() {
         inputField.setText("");
         nameField.setText("");
@@ -111,7 +154,7 @@ public class MainActivity extends AppCompatActivity {
         mengeField.setText("");
 
         suppressNextJump = true;
-        currentLagerOptions.clear();
+        currentLagerItems.clear();
         lagerAdapter.notifyDataSetChanged();
         suppressNextJump = false;
 
@@ -126,7 +169,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void openSpinnerAutomatically() {
-        // Open spinner dropdown reliably after UI updates
         lagerSpinner.post(() -> lagerSpinner.performClick());
     }
 
@@ -166,12 +208,20 @@ public class MainActivity extends AppCompatActivity {
             String benennung = obj.optString("benennung", "");
             String me = obj.optString("me", "");
 
-            List<String> newOptions = new ArrayList<>();
-            JSONArray lagers = obj.optJSONArray("lagernr");
-            if (lagers != null) {
-                for (int i = 0; i < lagers.length(); i++) {
-                    String val = lagers.optString(i, "").trim();
-                    if (!val.isEmpty()) newOptions.add(val);
+            // NEW: parse lagerBestand array
+            List<LagerItem> newItems = new ArrayList<>();
+            JSONArray lb = obj.optJSONArray("lagerBestand");
+            if (lb != null) {
+                for (int i = 0; i < lb.length(); i++) {
+                    JSONObject entry = lb.optJSONObject(i);
+                    if (entry == null) continue;
+
+                    String lagernr = entry.optString("lagernr", "").trim();
+                    double bestand = entry.optDouble("bestand", 0.0);
+
+                    if (!lagernr.isEmpty()) {
+                        newItems.add(new LagerItem(lagernr, bestand));
+                    }
                 }
             }
 
@@ -182,21 +232,24 @@ public class MainActivity extends AppCompatActivity {
                 bestandField.setText("");
                 mengeField.setText("");
 
-                // Update spinner list without immediately triggering the jump
+                // Update spinner list without triggering jump immediately
                 suppressNextJump = true;
-                currentLagerOptions.clear();
-                currentLagerOptions.addAll(newOptions);
+                currentLagerItems.clear();
+                currentLagerItems.addAll(newItems);
                 lagerAdapter.notifyDataSetChanged();
 
-                // Reset selection
-                if (!currentLagerOptions.isEmpty()) {
+                if (!currentLagerItems.isEmpty()) {
                     lagerSpinner.setSelection(0, false);
                 }
                 suppressNextJump = false;
 
-                // Open dropdown automatically (no extra tap)
-                if (currentLagerOptions.isEmpty()) {
+                // Behavior: 0 -> toast, 1 -> auto select + go to nach, 2+ -> open dropdown
+                if (currentLagerItems.isEmpty()) {
                     Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
+                } else if (currentLagerItems.size() == 1) {
+                    lagerSpinner.setSelection(0, false);
+                    bestandField.requestFocus();
+                    showKeyboard(bestandField);
                 } else {
                     openSpinnerAutomatically();
                 }
@@ -220,5 +273,22 @@ public class MainActivity extends AppCompatActivity {
         while ((line = in.readLine()) != null) sb.append(line);
         in.close();
         return sb.toString();
+    }
+
+    // Simple holder class for spinner items
+    private static class LagerItem {
+        final String lagernr;
+        final double bestand;
+
+        LagerItem(String lagernr, double bestand) {
+            this.lagernr = lagernr;
+            this.bestand = bestand;
+        }
+
+        @Override
+        public String toString() {
+            // Adapter uses applyAlignedText(), but toString is a safe fallback.
+            return lagernr + "    " + bestand;
+        }
     }
 }

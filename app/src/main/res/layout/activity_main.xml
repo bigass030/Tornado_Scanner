@@ -120,7 +120,9 @@
                     android:layout_weight="1"
                     android:layout_height="72dp"
                     android:background="#EEEEEE"
-                    android:padding="8dp" />
+                    android:padding="8dp"
+                    android:popupBackground="#EEF7FF" />
+
             </LinearLayout>
 
             <!-- Row 4: nach -->
