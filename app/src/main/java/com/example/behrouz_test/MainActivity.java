@@ -1,19 +1,16 @@
 package com.example.behrouz_test;
 
 import android.content.Context;
-import android.graphics.Typeface;
 import android.os.Bundle;
 import android.util.Log;
-import android.view.View;
-import android.view.ViewGroup;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
 import android.widget.Button;
 import android.widget.EditText;
+import android.widget.ImageButton;
 import android.widget.Spinner;
-import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -24,6 +21,7 @@ import org.json.JSONObject;
 import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
+import java.io.OutputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -39,14 +37,13 @@ public class MainActivity extends AppCompatActivity {
     private EditText inputField, nameField, bestandField, meField, mengeField;
     private Spinner lagerSpinner;
 
-    // NEW: store objects, not strings
     private final List<LagerItem> currentLagerItems = new ArrayList<>();
     private ArrayAdapter<LagerItem> lagerAdapter;
 
     // Prevent “auto-selected first item” from triggering jump immediately after loading data
     private boolean suppressNextJump = false;
 
-    // For pretty numbers like "6" or "3.5"
+    // For pretty numbers in spinner label
     private final DecimalFormat df = new DecimalFormat("0.##");
 
     @Override
@@ -63,27 +60,12 @@ public class MainActivity extends AppCompatActivity {
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
-        // Custom adapter that aligns columns with monospace formatting
-        lagerAdapter = new ArrayAdapter<LagerItem>(this, android.R.layout.simple_spinner_dropdown_item, currentLagerItems) {
-            @Override
-            public View getView(int position, View convertView, ViewGroup parent) {
-                TextView tv = (TextView) super.getView(position, convertView, parent);
-                applyAlignedText(tv, getItem(position));
-                return tv;
-            }
-
-            @Override
-            public View getDropDownView(int position, View convertView, ViewGroup parent) {
-                TextView tv = (TextView) super.getDropDownView(position, convertView, parent);
-                applyAlignedText(tv, getItem(position));
-                return tv;
-            }
-        };
+        lagerAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, currentLagerItems);
         lagerSpinner.setAdapter(lagerAdapter);
 
         lagerSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
             @Override
-            public void onItemSelected(android.widget.AdapterView<?> parent, View view, int position, long id) {
+            public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
                 if (suppressNextJump) return;
 
                 // User selected "von" -> jump to "nach" and open keyboard
@@ -115,35 +97,21 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "Bitte Artikel-Nr scannen", Toast.LENGTH_SHORT).show();
                     return true;
                 }
-                new Thread(() -> makeHttpRequest(inputText)).start();
+                new Thread(() -> makeArtikelRequest(inputText)).start();
                 return true;
             }
             return false;
         });
 
+        // Undo/reset button inside Artikel-Nr field (your existing behavior)
+        ImageButton clearIconButton = findViewById(R.id.clearIconButton);
+        clearIconButton.setOnClickListener(v -> clearAllAndFocus());
+
+        // Play/send button inside Menge field -> POST umbuchung
+        ImageButton playButton = findViewById(R.id.playButton);
+        playButton.setOnClickListener(v -> new Thread(this::sendUmbuchungPost).start());
+
         inputField.requestFocus();
-
-        Button clearButton = findViewById(R.id.clearButton);
-        clearButton.setOnClickListener(v -> clearAllAndFocus());
-    }
-
-    private void applyAlignedText(TextView tv, LagerItem item) {
-        if (tv == null || item == null) return;
-
-        // Make alignment stable across devices by using monospace font.
-        tv.setTypeface(Typeface.MONOSPACE);
-
-        // Format: lagernr padded to fixed width + a few spaces + bestand
-        // Adjust the width number (e.g. 10/12/14) depending on your typical lagernr length.
-        String l = item.lagernr == null ? "" : item.lagernr.trim();
-
-        String b = df.format(item.bestand);
-
-        // %-12s means left-align in 12-character field.
-        String text = String.format("%-12s    %s", l, b);
-
-        tv.setText(text);
-        tv.setSingleLine(true);
     }
 
     private void clearAllAndFocus() {
@@ -172,7 +140,8 @@ public class MainActivity extends AppCompatActivity {
         lagerSpinner.post(() -> lagerSpinner.performClick());
     }
 
-    private void makeHttpRequest(String textToSend) {
+    // ----------- 1) GET /artikel -----------
+    private void makeArtikelRequest(String textToSend) {
         HttpURLConnection connection = null;
 
         try {
@@ -208,7 +177,7 @@ public class MainActivity extends AppCompatActivity {
             String benennung = obj.optString("benennung", "");
             String me = obj.optString("me", "");
 
-            // NEW: parse lagerBestand array
+            // parse lagerBestand array
             List<LagerItem> newItems = new ArrayList<>();
             JSONArray lb = obj.optJSONArray("lagerBestand");
             if (lb != null) {
@@ -219,9 +188,7 @@ public class MainActivity extends AppCompatActivity {
                     String lagernr = entry.optString("lagernr", "").trim();
                     double bestand = entry.optDouble("bestand", 0.0);
 
-                    if (!lagernr.isEmpty()) {
-                        newItems.add(new LagerItem(lagernr, bestand));
-                    }
+                    if (!lagernr.isEmpty()) newItems.add(new LagerItem(lagernr, bestand));
                 }
             }
 
@@ -232,7 +199,7 @@ public class MainActivity extends AppCompatActivity {
                 bestandField.setText("");
                 mengeField.setText("");
 
-                // Update spinner list without triggering jump immediately
+                // update spinner list without triggering jump immediately
                 suppressNextJump = true;
                 currentLagerItems.clear();
                 currentLagerItems.addAll(newItems);
@@ -243,7 +210,7 @@ public class MainActivity extends AppCompatActivity {
                 }
                 suppressNextJump = false;
 
-                // Behavior: 0 -> toast, 1 -> auto select + go to nach, 2+ -> open dropdown
+                // 0 -> toast, 1 -> auto-select + go nach, 2+ -> open dropdown
                 if (currentLagerItems.isEmpty()) {
                     Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
                 } else if (currentLagerItems.size() == 1) {
@@ -265,6 +232,100 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
+    // ----------- 2) POST /umbuchung -----------
+    private void sendUmbuchungPost() {
+        HttpURLConnection connection = null;
+
+        try {
+            String artnr = inputField.getText().toString().trim();
+            String nach = bestandField.getText().toString().trim();
+
+            LagerItem selected = (LagerItem) lagerSpinner.getSelectedItem();
+            String von = (selected != null) ? selected.lagernr.trim() : "";
+
+            String mengeRaw = mengeField.getText().toString().trim();
+            // allow comma decimal input from DE keyboards
+            mengeRaw = mengeRaw.replace(',', '.');
+
+            if (artnr.isEmpty()) {
+                runOnUiThread(() -> Toast.makeText(this, "Artikel-Nr fehlt", Toast.LENGTH_SHORT).show());
+                return;
+            }
+            if (von.isEmpty()) {
+                runOnUiThread(() -> Toast.makeText(this, "\"von\" fehlt", Toast.LENGTH_SHORT).show());
+                return;
+            }
+            if (nach.isEmpty()) {
+                runOnUiThread(() -> Toast.makeText(this, "\"nach\" fehlt", Toast.LENGTH_SHORT).show());
+                return;
+            }
+            if (mengeRaw.isEmpty()) {
+                runOnUiThread(() -> Toast.makeText(this, "Menge fehlt", Toast.LENGTH_SHORT).show());
+                return;
+            }
+
+            double menge;
+            try {
+                menge = Double.parseDouble(mengeRaw);
+            } catch (NumberFormatException nfe) {
+                runOnUiThread(() -> Toast.makeText(this, "Menge ist ungültig", Toast.LENGTH_SHORT).show());
+                return;
+            }
+
+            String targetUrl = "http://10.0.20.26:8080/umbuchung";
+            Log.i(TAG, "POST to: " + targetUrl);
+
+            // Build JSON body
+            JSONObject body = new JSONObject();
+            body.put("artnr", artnr);
+            body.put("von", von);
+            body.put("nach", nach);
+            body.put("menge", menge);
+
+            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
+
+            URL url = new URL(targetUrl);
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(7000);
+            connection.setReadTimeout(7000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
+            connection.setRequestProperty("Accept", "application/json");
+
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(payload);
+            }
+
+            int responseCode = connection.getResponseCode();
+            InputStream stream = (responseCode >= 400)
+                    ? connection.getErrorStream()
+                    : connection.getInputStream();
+
+            String responseBody = readAll(stream);
+            Log.i(TAG, "Umbuchung HTTP " + responseCode + " body: " + responseBody);
+
+            runOnUiThread(() -> {
+                if (responseCode >= 400) {
+                    Toast.makeText(this, "Umbuchung Fehler HTTP " + responseCode, Toast.LENGTH_LONG).show();
+                } else {
+                    Toast.makeText(this, "Umbuchung OK", Toast.LENGTH_SHORT).show();
+                    // Optional: clear only user-input fields after success
+                    // bestandField.setText("");
+                    // mengeField.setText("");
+                }
+            });
+
+        } catch (Exception e) {
+            Log.e(TAG, "Umbuchung Exception", e);
+            runOnUiThread(() ->
+                    Toast.makeText(this, "Umbuchung Fehler: " + e.getMessage(), Toast.LENGTH_LONG).show()
+            );
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
     private String readAll(InputStream stream) throws Exception {
         if (stream == null) return "";
         BufferedReader in = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
@@ -275,8 +336,7 @@ public class MainActivity extends AppCompatActivity {
         return sb.toString();
     }
 
-    // Simple holder class for spinner items
-    private static class LagerItem {
+    private class LagerItem {
         final String lagernr;
         final double bestand;
 
@@ -287,8 +347,9 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public String toString() {
-            // Adapter uses applyAlignedText(), but toString is a safe fallback.
-            return lagernr + "    " + bestand;
+            // Shown in spinner (you already aligned it earlier with monospace formatting in adapter version;
+            // keeping a readable fallback here)
+            return String.format("%-12s    %s", lagernr.trim(), df.format(bestand));
         }
     }
 }
