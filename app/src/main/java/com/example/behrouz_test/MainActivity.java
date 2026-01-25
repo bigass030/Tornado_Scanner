@@ -71,11 +71,20 @@ public class MainActivity extends AppCompatActivity {
         bestandField = findViewById(R.id.bestandField); // NACH
         mengeField = findViewById(R.id.menge);
 
-        // --- Clear red warning as soon as user starts correcting NACH ---
+        // Clear red warning as soon as user starts correcting NACH
         bestandField.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
             @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
                 setNachFieldRed(false);
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        });
+
+        // Clear red warning as soon as user starts correcting MENGE
+        mengeField.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                setMengeFieldRed(false);
             }
             @Override public void afterTextChanged(Editable s) { }
         });
@@ -195,16 +204,33 @@ public class MainActivity extends AppCompatActivity {
         bestandField.invalidate();
     }
 
+    // Minimal visual feedback: turn MENGE field red if invalid
+    private void setMengeFieldRed(boolean red) {
+        if (mengeField == null) return;
+        Drawable bg = mengeField.getBackground();
+        if (bg == null) return;
+
+        bg = bg.mutate();
+        if (red) {
+            bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
+        } else {
+            bg.clearColorFilter();
+        }
+        mengeField.invalidate();
+    }
+
     private void clearAllAndFocus() {
         inputField.setText("");
         setArtikelFieldRed(false);
 
         nameField.setText("");
         meField.setText("");
+
         bestandField.setText("");
         setNachFieldRed(false);
 
         mengeField.setText("");
+        setMengeFieldRed(false);
 
         currentLagerItems.clear();
         lagerAdapter.notifyDataSetChanged();
@@ -274,6 +300,7 @@ public class MainActivity extends AppCompatActivity {
                 setNachFieldRed(false);
 
                 mengeField.setText("");
+                setMengeFieldRed(false);
 
                 // update spinner list without triggering jump immediately
                 suppressNextJump = true;
@@ -293,7 +320,6 @@ public class MainActivity extends AppCompatActivity {
                 // 0 -> toast, 1 -> auto-select + go nach, 2+ -> open dropdown
                 if (currentLagerItems.isEmpty()) {
                     Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
-                    // DO NOT mark Artikel-Nr red here, because Artikel-Nr may be valid.
                     setArtikelFieldRed(false);
                 } else if (currentLagerItems.size() == 1) {
                     lagerSpinner.setSelection(0, false);
@@ -351,7 +377,6 @@ public class MainActivity extends AppCompatActivity {
 
             runOnUiThread(() -> {
                 if (responseCode == 200) {
-                    // Put response body into NACH field and clear red
                     bestandField.setText(responseBody != null ? responseBody : "");
                     setNachFieldRed(false);
 
@@ -359,11 +384,9 @@ public class MainActivity extends AppCompatActivity {
                     lastNachSent = bestandField.getText().toString().trim();
 
                 } else if (responseCode == 404) {
-                    // Mark red: invalid input
                     setNachFieldRed(true);
 
                 } else if (responseCode >= 400) {
-                    // Other server errors
                     setNachFieldRed(true);
                     Toast.makeText(this, "lagernr Fehler HTTP " + responseCode, Toast.LENGTH_SHORT).show();
                 }
@@ -390,6 +413,7 @@ public class MainActivity extends AppCompatActivity {
 
             LagerItem selected = (LagerItem) lagerSpinner.getSelectedItem();
             String von = (selected != null) ? selected.lagernr.trim() : "";
+            double vonBestand = (selected != null) ? selected.bestand : 0.0;
 
             String mengeRaw = mengeField.getText().toString().trim();
             // allow comma decimal input from DE keyboards
@@ -416,9 +440,28 @@ public class MainActivity extends AppCompatActivity {
             try {
                 menge = Double.parseDouble(mengeRaw);
             } catch (Exception e) {
-                runOnUiThread(() -> Toast.makeText(this, "Menge ungültig", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> {
+                    setMengeFieldRed(true);
+                    Toast.makeText(this, "Menge ungültig", Toast.LENGTH_SHORT).show();
+                });
                 return;
             }
+
+            // Menge must not exceed "von" bestand
+            if (menge > vonBestand) {
+                runOnUiThread(() -> {
+                    setMengeFieldRed(true);
+                    Toast.makeText(this, "Menge ist größer als Bestand", Toast.LENGTH_SHORT).show();
+                });
+                return;
+            } else {
+                runOnUiThread(() -> setMengeFieldRed(false));
+            }
+
+            // Visible feedback: sending now
+            runOnUiThread(() ->
+                    Toast.makeText(this, "Sende Umbuchung...", Toast.LENGTH_SHORT).show()
+            );
 
             JSONObject body = new JSONObject();
             body.put("artnr", artnr);
@@ -452,7 +495,7 @@ public class MainActivity extends AppCompatActivity {
 
             runOnUiThread(() -> {
                 if (responseCode >= 400) {
-                    Toast.makeText(this, "POST Fehler HTTP " + responseCode, Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "Umbuchung FEHLER (HTTP " + responseCode + ")", Toast.LENGTH_LONG).show();
                 } else {
                     Toast.makeText(this, "Umbuchung OK", Toast.LENGTH_SHORT).show();
                     clearAllAndFocus();
@@ -461,7 +504,9 @@ public class MainActivity extends AppCompatActivity {
 
         } catch (Exception e) {
             Log.e(TAG, "POST Exception", e);
-            runOnUiThread(() -> Toast.makeText(this, "POST Fehler: " + e.getMessage(), Toast.LENGTH_LONG).show());
+            runOnUiThread(() ->
+                    Toast.makeText(this, "Umbuchung FEHLER: " + e.getMessage(), Toast.LENGTH_LONG).show()
+            );
         } finally {
             if (connection != null) connection.disconnect();
         }

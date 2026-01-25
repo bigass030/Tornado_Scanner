@@ -17,7 +17,7 @@
             android:orientation="vertical"
             android:padding="24dp">
 
-            <!-- Row 1: Artikel-Nr with INSIDE undo button -->
+            <!-- Row 1: Artikel-Nr with INSIDE undo button (now 61dp) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -26,7 +26,7 @@
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:gravity="center_vertical"
                     android:text="Artikel-Nr"
                     android:textSize="18sp"
@@ -36,7 +36,7 @@
                 <FrameLayout
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="72dp">
+                    android:layout_height="61dp">
 
                     <EditText
                         android:id="@+id/inputField"
@@ -103,7 +103,7 @@
                     android:clickable="false"/>
             </LinearLayout>
 
-            <!-- Row 3: Einheit (15% shorter: 72dp -> 61dp) -->
+            <!-- Row 3: Einheit (already 61dp) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -136,7 +136,7 @@
                     android:clickable="false"/>
             </LinearLayout>
 
-            <!-- Row 4: von (15% shorter: 72dp -> 61dp) -->
+            <!-- Row 4: von (61dp) with double spacing below -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -165,13 +165,13 @@
             <TextView
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
-                android:text="groß/klein Schreibung wird korrigiert"
-                android:textSize="13sp"
+                android:text="groß-klein wirdkorrigiert"
+                android:textSize="16sp"
                 android:textColor="#666666"
                 android:layout_marginStart="132dp"
                 android:layout_marginBottom="6dp" />
 
-            <!-- Row 5: nach (15% shorter: 72dp -> 61dp) -->
+            <!-- Row 5: nach (61dp) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -202,7 +202,7 @@
                     android:imeOptions="actionNext"/>
             </LinearLayout>
 
-            <!-- Row 6: Menge (numeric) with play button INSIDE -->
+            <!-- Row 6: Menge (now 61dp) with play button INSIDE -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -211,7 +211,7 @@
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:gravity="center_vertical"
                     android:text="Menge"
                     android:textSize="18sp"
@@ -220,7 +220,7 @@
                 <FrameLayout
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="72dp">
+                    android:layout_height="61dp">
 
                     <EditText
                         android:id="@+id/menge"
