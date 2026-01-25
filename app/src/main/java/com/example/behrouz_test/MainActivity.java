@@ -17,6 +17,7 @@ import android.widget.ArrayAdapter;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.Spinner;
+import android.widget.TextView;
 import android.widget.Toast;
 
 import androidx.appcompat.app.AppCompatActivity;
@@ -33,8 +34,11 @@ import java.net.URL;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.text.DecimalFormat;
+import java.text.SimpleDateFormat;
 import java.util.ArrayList;
+import java.util.Date;
 import java.util.List;
+import java.util.Locale;
 
 public class MainActivity extends AppCompatActivity {
 
@@ -48,6 +52,9 @@ public class MainActivity extends AppCompatActivity {
 
     private Spinner lagerSpinner;
 
+    private TextView lastTryText;
+    private TextView lastTryMark;
+
     private final List<LagerItem> currentLagerItems = new ArrayList<>();
     private ArrayAdapter<LagerItem> lagerAdapter;
 
@@ -58,6 +65,8 @@ public class MainActivity extends AppCompatActivity {
     private final DecimalFormat df = new DecimalFormat("0.##");
 
     private String lastNachSent = "";
+
+    private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -70,6 +79,9 @@ public class MainActivity extends AppCompatActivity {
         lagerSpinner = findViewById(R.id.lagerSpinner);
         bestandField = findViewById(R.id.bestandField); // NACH
         mengeField = findViewById(R.id.menge);
+
+        lastTryText = findViewById(R.id.lastTryText);
+        lastTryMark = findViewById(R.id.lastTryMark);
 
         // Clear red warning as soon as user starts correcting NACH
         bestandField.addTextChangedListener(new TextWatcher() {
@@ -93,10 +105,8 @@ public class MainActivity extends AppCompatActivity {
             if (!hasFocus) {
                 String nachText = bestandField.getText().toString().trim();
 
-                // Do nothing if empty
                 if (nachText.isEmpty()) return;
 
-                // Avoid sending the same value repeatedly
                 if (nachText.equals(lastNachSent)) return;
                 lastNachSent = nachText;
 
@@ -116,7 +126,6 @@ public class MainActivity extends AppCompatActivity {
             public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
                 if (suppressNextJump) return;
 
-                // User selected "von" -> jump to "nach" and open keyboard
                 bestandField.requestFocus();
                 showKeyboard(bestandField);
             }
@@ -163,59 +172,67 @@ public class MainActivity extends AppCompatActivity {
             @Override public void afterTextChanged(Editable s) { }
         });
 
-        // Undo/reset button inside Artikel-Nr field (your existing behavior)
         ImageButton clearIconButton = findViewById(R.id.clearIconButton);
         clearIconButton.setOnClickListener(v -> clearAllAndFocus());
 
-        // Play/send button inside Menge field -> POST umbuchung
         ImageButton playButton = findViewById(R.id.playButton);
         playButton.setOnClickListener(v -> new Thread(this::sendUmbuchungPost).start());
 
         inputField.requestFocus();
     }
 
-    // Minimal visual feedback: turn Artikel-Nr field red if input/lookup is invalid
+    // ---------- last try UI ----------
+    private void setLastTry(boolean success, String artnr, String von, String nach, String menge, String time) {
+        final String text = artnr + "-" + von + "-" + nach + "-" + menge + "-" + time;
+
+        runOnUiThread(() -> {
+            if (lastTryText != null) lastTryText.setText(text);
+
+            if (lastTryMark != null) {
+                if (success) {
+                    lastTryMark.setText("✓");
+                    lastTryMark.setTextColor(Color.GREEN);
+                } else {
+                    lastTryMark.setText("✗");
+                    lastTryMark.setTextColor(Color.RED);
+                }
+            }
+        });
+    }
+
+
+    // -------------------------------
+
     private void setArtikelFieldRed(boolean red) {
         if (inputField == null) return;
         Drawable bg = inputField.getBackground();
         if (bg == null) return;
 
         bg = bg.mutate();
-        if (red) {
-            bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
-        } else {
-            bg.clearColorFilter();
-        }
+        if (red) bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
+        else bg.clearColorFilter();
         inputField.invalidate();
     }
 
-    // Minimal visual feedback: turn NACH field red if invalid
     private void setNachFieldRed(boolean red) {
         if (bestandField == null) return;
         Drawable bg = bestandField.getBackground();
         if (bg == null) return;
 
         bg = bg.mutate();
-        if (red) {
-            bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
-        } else {
-            bg.clearColorFilter();
-        }
+        if (red) bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
+        else bg.clearColorFilter();
         bestandField.invalidate();
     }
 
-    // Minimal visual feedback: turn MENGE field red if invalid
     private void setMengeFieldRed(boolean red) {
         if (mengeField == null) return;
         Drawable bg = mengeField.getBackground();
         if (bg == null) return;
 
         bg = bg.mutate();
-        if (red) {
-            bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
-        } else {
-            bg.clearColorFilter();
-        }
+        if (red) bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
+        else bg.clearColorFilter();
         mengeField.invalidate();
     }
 
@@ -277,7 +294,6 @@ public class MainActivity extends AppCompatActivity {
             String benennung = obj.optString("benennung", "");
             String me = obj.optString("me", "");
 
-            // parse lagerBestand array
             List<LagerItem> newItems = new ArrayList<>();
             JSONArray lb = obj.optJSONArray("lagerBestand");
             if (lb != null) {
@@ -302,7 +318,6 @@ public class MainActivity extends AppCompatActivity {
                 mengeField.setText("");
                 setMengeFieldRed(false);
 
-                // update spinner list without triggering jump immediately
                 suppressNextJump = true;
                 currentLagerItems.clear();
                 currentLagerItems.addAll(newItems);
@@ -313,11 +328,6 @@ public class MainActivity extends AppCompatActivity {
                 }
                 suppressNextJump = false;
 
-                if (!currentLagerItems.isEmpty()) {
-                    setArtikelFieldRed(false);
-                }
-
-                // 0 -> toast, 1 -> auto-select + go nach, 2+ -> open dropdown
                 if (currentLagerItems.isEmpty()) {
                     Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
                     setArtikelFieldRed(false);
@@ -328,7 +338,6 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     openSpinnerAutomatically();
                 }
-
             });
 
         } catch (Exception e) {
@@ -357,7 +366,6 @@ public class MainActivity extends AppCompatActivity {
             connection.setDoOutput(true);
             connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
-            // JSON body: {"lagernr":"ah123"}
             JSONObject body = new JSONObject();
             body.put("lagernr", nachText);
 
@@ -379,13 +387,9 @@ public class MainActivity extends AppCompatActivity {
                 if (responseCode == 200) {
                     bestandField.setText(responseBody != null ? responseBody : "");
                     setNachFieldRed(false);
-
-                    // Keep lastNachSent in sync with what we now display
                     lastNachSent = bestandField.getText().toString().trim();
-
                 } else if (responseCode == 404) {
                     setNachFieldRed(true);
-
                 } else if (responseCode >= 400) {
                     setNachFieldRed(true);
                     Toast.makeText(this, "lagernr Fehler HTTP " + responseCode, Toast.LENGTH_SHORT).show();
@@ -407,31 +411,39 @@ public class MainActivity extends AppCompatActivity {
     private void sendUmbuchungPost() {
         HttpURLConnection connection = null;
 
+        // Capture what the user tried + time (always)
+        final String artnrTry = inputField.getText().toString().trim();
+
+        LagerItem selected = (LagerItem) lagerSpinner.getSelectedItem();
+        final String vonTry = (selected != null) ? selected.lagernr.trim() : "";
+        final double vonBestand = (selected != null) ? selected.bestand : 0.0;
+
+        final String nachTry = bestandField.getText().toString().trim();
+
+        String mengeRaw = mengeField.getText().toString().trim();
+        mengeRaw = mengeRaw.replace(',', '.');
+        final String mengeTry = mengeRaw;
+
+        final String timeTry = timeFmt.format(new Date());
+
         try {
-            String artnr = inputField.getText().toString().trim();
-            String nach = bestandField.getText().toString().trim();
-
-            LagerItem selected = (LagerItem) lagerSpinner.getSelectedItem();
-            String von = (selected != null) ? selected.lagernr.trim() : "";
-            double vonBestand = (selected != null) ? selected.bestand : 0.0;
-
-            String mengeRaw = mengeField.getText().toString().trim();
-            // allow comma decimal input from DE keyboards
-            mengeRaw = mengeRaw.replace(',', '.');
-
-            if (artnr.isEmpty()) {
+            if (artnrTry.isEmpty()) {
+                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
                 runOnUiThread(() -> Toast.makeText(this, "Artikel-Nr fehlt", Toast.LENGTH_SHORT).show());
                 return;
             }
-            if (von.isEmpty()) {
+            if (vonTry.isEmpty()) {
+                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
                 runOnUiThread(() -> Toast.makeText(this, "Von Lager fehlt", Toast.LENGTH_SHORT).show());
                 return;
             }
-            if (nach.isEmpty()) {
+            if (nachTry.isEmpty()) {
+                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
                 runOnUiThread(() -> Toast.makeText(this, "Nach Lager fehlt", Toast.LENGTH_SHORT).show());
                 return;
             }
             if (mengeRaw.isEmpty()) {
+                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
                 runOnUiThread(() -> Toast.makeText(this, "Menge fehlt", Toast.LENGTH_SHORT).show());
                 return;
             }
@@ -440,6 +452,7 @@ public class MainActivity extends AppCompatActivity {
             try {
                 menge = Double.parseDouble(mengeRaw);
             } catch (Exception e) {
+                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
                 runOnUiThread(() -> {
                     setMengeFieldRed(true);
                     Toast.makeText(this, "Menge ungültig", Toast.LENGTH_SHORT).show();
@@ -447,8 +460,8 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
 
-            // Menge must not exceed "von" bestand
             if (menge > vonBestand) {
+                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
                 runOnUiThread(() -> {
                     setMengeFieldRed(true);
                     Toast.makeText(this, "Menge ist größer als Bestand", Toast.LENGTH_SHORT).show();
@@ -458,15 +471,10 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> setMengeFieldRed(false));
             }
 
-            // Visible feedback: sending now
-            runOnUiThread(() ->
-                    Toast.makeText(this, "Sende Umbuchung...", Toast.LENGTH_SHORT).show()
-            );
-
             JSONObject body = new JSONObject();
-            body.put("artnr", artnr);
-            body.put("von", von);
-            body.put("nach", nach);
+            body.put("artnr", artnrTry);
+            body.put("von", vonTry);
+            body.put("nach", nachTry);
             body.put("menge", menge);
 
             String targetUrl = "http://10.0.20.26:8080/umbuchung";
@@ -493,6 +501,12 @@ public class MainActivity extends AppCompatActivity {
             String responseBody = readAll(stream);
             Log.i(TAG, "POST /umbuchung HTTP " + responseCode + " body: " + responseBody);
 
+            if (responseCode >= 400) {
+                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
+            } else {
+                setLastTry(true, artnrTry, vonTry, nachTry, mengeTry, timeTry);
+            }
+
             runOnUiThread(() -> {
                 if (responseCode >= 400) {
                     Toast.makeText(this, "Umbuchung FEHLER (HTTP " + responseCode + ")", Toast.LENGTH_LONG).show();
@@ -504,6 +518,7 @@ public class MainActivity extends AppCompatActivity {
 
         } catch (Exception e) {
             Log.e(TAG, "POST Exception", e);
+            setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
             runOnUiThread(() ->
                     Toast.makeText(this, "Umbuchung FEHLER: " + e.getMessage(), Toast.LENGTH_LONG).show()
             );
@@ -513,7 +528,6 @@ public class MainActivity extends AppCompatActivity {
     }
 
     private void openSpinnerAutomatically() {
-        // "Perform click" on spinner so dropdown opens
         lagerSpinner.post(() -> lagerSpinner.performClick());
     }
 
