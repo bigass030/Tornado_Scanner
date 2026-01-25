@@ -1,5 +1,7 @@
 package com.example.behrouz_test;
 
+import android.provider.Settings;
+
 import android.content.Context;
 
 import android.graphics.Color;
@@ -471,11 +473,14 @@ public class MainActivity extends AppCompatActivity {
                 runOnUiThread(() -> setMengeFieldRed(false));
             }
 
+            String androidId = Settings.Secure.getString(getContentResolver(), Settings.Secure.ANDROID_ID);
+
             JSONObject body = new JSONObject();
             body.put("artnr", artnrTry);
             body.put("von", vonTry);
             body.put("nach", nachTry);
             body.put("menge", menge);
+            body.put("deviceID", androidId);
 
             String targetUrl = "http://10.0.20.26:8080/umbuchung";
             URL url = new URL(targetUrl);
