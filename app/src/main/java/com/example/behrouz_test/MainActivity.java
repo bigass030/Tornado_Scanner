@@ -14,7 +14,6 @@ import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
 import android.view.inputmethod.InputMethodManager;
 import android.widget.ArrayAdapter;
-import android.widget.Button;
 import android.widget.EditText;
 import android.widget.ImageButton;
 import android.widget.Spinner;
@@ -44,7 +43,7 @@ public class MainActivity extends AppCompatActivity {
     private EditText inputField;
     private EditText nameField;
     private EditText meField;
-    private EditText bestandField;
+    private EditText bestandField; // NACH
     private EditText mengeField;
 
     private Spinner lagerSpinner;
@@ -69,8 +68,17 @@ public class MainActivity extends AppCompatActivity {
         nameField = findViewById(R.id.nameField);
         meField = findViewById(R.id.meField);
         lagerSpinner = findViewById(R.id.lagerSpinner);
-        bestandField = findViewById(R.id.bestandField);
+        bestandField = findViewById(R.id.bestandField); // NACH
         mengeField = findViewById(R.id.menge);
+
+        // --- Clear red warning as soon as user starts correcting NACH ---
+        bestandField.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                setNachFieldRed(false);
+            }
+            @Override public void afterTextChanged(Editable s) { }
+        });
 
         bestandField.setOnFocusChangeListener((v, hasFocus) -> {
             if (!hasFocus) {
@@ -88,7 +96,6 @@ public class MainActivity extends AppCompatActivity {
                 showKeyboard(bestandField);
             }
         });
-
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
@@ -173,12 +180,30 @@ public class MainActivity extends AppCompatActivity {
         inputField.invalidate();
     }
 
+    // Minimal visual feedback: turn NACH field red if invalid
+    private void setNachFieldRed(boolean red) {
+        if (bestandField == null) return;
+        Drawable bg = bestandField.getBackground();
+        if (bg == null) return;
+
+        bg = bg.mutate();
+        if (red) {
+            bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
+        } else {
+            bg.clearColorFilter();
+        }
+        bestandField.invalidate();
+    }
+
     private void clearAllAndFocus() {
         inputField.setText("");
         setArtikelFieldRed(false);
+
         nameField.setText("");
         meField.setText("");
         bestandField.setText("");
+        setNachFieldRed(false);
+
         mengeField.setText("");
 
         currentLagerItems.clear();
@@ -246,6 +271,8 @@ public class MainActivity extends AppCompatActivity {
                 meField.setText(me);
 
                 bestandField.setText("");
+                setNachFieldRed(false);
+
                 mengeField.setText("");
 
                 // update spinner list without triggering jump immediately
@@ -289,7 +316,7 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ----------- 2) POST /umbuchung -----------
+    // ----------- 2) POST /lagernr -----------
     private void postLagernr(String nachText) {
         HttpURLConnection connection = null;
 
@@ -322,23 +349,38 @@ public class MainActivity extends AppCompatActivity {
             String responseBody = readAll(stream);
             Log.i(TAG, "POST /lagernr HTTP " + responseCode + " body: " + responseBody);
 
-            if (responseCode >= 400) {
-                runOnUiThread(() ->
-                        Toast.makeText(this, "lagernr Fehler HTTP " + responseCode, Toast.LENGTH_SHORT).show()
-                );
-            }
+            runOnUiThread(() -> {
+                if (responseCode == 200) {
+                    // Put response body into NACH field and clear red
+                    bestandField.setText(responseBody != null ? responseBody : "");
+                    setNachFieldRed(false);
+
+                    // Keep lastNachSent in sync with what we now display
+                    lastNachSent = bestandField.getText().toString().trim();
+
+                } else if (responseCode == 404) {
+                    // Mark red: invalid input
+                    setNachFieldRed(true);
+
+                } else if (responseCode >= 400) {
+                    // Other server errors
+                    setNachFieldRed(true);
+                    Toast.makeText(this, "lagernr Fehler HTTP " + responseCode, Toast.LENGTH_SHORT).show();
+                }
+            });
 
         } catch (Exception e) {
             Log.e(TAG, "POST /lagernr Exception", e);
-            runOnUiThread(() ->
-                    Toast.makeText(this, "lagernr POST Fehler: " + e.getMessage(), Toast.LENGTH_SHORT).show()
-            );
+            runOnUiThread(() -> {
+                setNachFieldRed(true);
+                Toast.makeText(this, "lagernr POST Fehler: " + e.getMessage(), Toast.LENGTH_SHORT).show();
+            });
         } finally {
             if (connection != null) connection.disconnect();
         }
     }
 
-
+    // ----------- 3) POST /umbuchung -----------
     private void sendUmbuchungPost() {
         HttpURLConnection connection = null;
 
@@ -406,7 +448,7 @@ public class MainActivity extends AppCompatActivity {
                     : connection.getInputStream();
 
             String responseBody = readAll(stream);
-            Log.i(TAG, "POST HTTP " + responseCode + " body: " + responseBody);
+            Log.i(TAG, "POST /umbuchung HTTP " + responseCode + " body: " + responseBody);
 
             runOnUiThread(() -> {
                 if (responseCode >= 400) {

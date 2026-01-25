@@ -103,7 +103,7 @@
                     android:clickable="false"/>
             </LinearLayout>
 
-            <!-- Row 3: Einheit -->
+            <!-- Row 3: Einheit (15% shorter: 72dp -> 61dp) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -112,7 +112,7 @@
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:gravity="center_vertical"
                     android:text="Einheit"
                     android:textSize="18sp"
@@ -122,7 +122,7 @@
                     android:id="@+id/meField"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:background="#EEEEEE"
                     android:padding="16dp"
                     android:textSize="20sp"
@@ -136,16 +136,16 @@
                     android:clickable="false"/>
             </LinearLayout>
 
-            <!-- Row 4: von -->
+            <!-- Row 4: von (15% shorter: 72dp -> 61dp) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:orientation="horizontal"
-                android:layout_marginBottom="20dp">
+                android:layout_marginBottom="40dp">
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:gravity="center_vertical"
                     android:text="von"
                     android:textSize="18sp"
@@ -155,13 +155,23 @@
                     android:id="@+id/lagerSpinner"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:background="#EEEEEE"
                     android:padding="8dp"
                     android:popupBackground="#BFE3FF" />
             </LinearLayout>
 
-            <!-- Row 5: nach -->
+            <!-- Hint above NACH field -->
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="groß/klein Schreibung wird korrigiert"
+                android:textSize="13sp"
+                android:textColor="#666666"
+                android:layout_marginStart="132dp"
+                android:layout_marginBottom="6dp" />
+
+            <!-- Row 5: nach (15% shorter: 72dp -> 61dp) -->
             <LinearLayout
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
@@ -170,7 +180,7 @@
 
                 <TextView
                     android:layout_width="120dp"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:gravity="center_vertical"
                     android:text="nach"
                     android:textSize="18sp"
@@ -180,7 +190,7 @@
                     android:id="@+id/bestandField"
                     android:layout_width="0dp"
                     android:layout_weight="1"
-                    android:layout_height="72dp"
+                    android:layout_height="61dp"
                     android:background="@android:drawable/editbox_background"
                     android:padding="16dp"
                     android:textSize="20sp"
@@ -192,7 +202,6 @@
                     android:imeOptions="actionNext"/>
             </LinearLayout>
 
-            <!-- Row 6: Menge -->
             <!-- Row 6: Menge (numeric) with play button INSIDE -->
             <LinearLayout
                 android:layout_width="match_parent"
@@ -243,7 +252,6 @@
                         android:padding="8dp"/>
                 </FrameLayout>
             </LinearLayout>
-
 
         </LinearLayout>
     </ScrollView>
