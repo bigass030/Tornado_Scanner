@@ -1,6 +1,13 @@
 package com.example.behrouz_test;
 
 import android.content.Context;
+
+import android.graphics.Color;
+import android.graphics.PorterDuff;
+import android.graphics.drawable.Drawable;
+import android.text.Editable;
+import android.text.TextWatcher;
+
 import android.os.Bundle;
 import android.util.Log;
 import android.view.WindowManager;
@@ -34,7 +41,12 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "HTTP_CALL";
 
-    private EditText inputField, nameField, bestandField, meField, mengeField;
+    private EditText inputField;
+    private EditText nameField;
+    private EditText meField;
+    private EditText bestandField;
+    private EditText mengeField;
+
     private Spinner lagerSpinner;
 
     private final List<LagerItem> currentLagerItems = new ArrayList<>();
@@ -45,6 +57,8 @@ public class MainActivity extends AppCompatActivity {
 
     // For pretty numbers in spinner label
     private final DecimalFormat df = new DecimalFormat("0.##");
+
+    private String lastNachSent = "";
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -57,6 +71,24 @@ public class MainActivity extends AppCompatActivity {
         lagerSpinner = findViewById(R.id.lagerSpinner);
         bestandField = findViewById(R.id.bestandField);
         mengeField = findViewById(R.id.menge);
+
+        bestandField.setOnFocusChangeListener((v, hasFocus) -> {
+            if (!hasFocus) {
+                String nachText = bestandField.getText().toString().trim();
+
+                // Do nothing if empty
+                if (nachText.isEmpty()) return;
+
+                // Avoid sending the same value repeatedly
+                if (nachText.equals(lastNachSent)) return;
+                lastNachSent = nachText;
+
+                new Thread(() -> postLagernr(nachText)).start();
+            } else {
+                showKeyboard(bestandField);
+            }
+        });
+
 
         getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
 
@@ -95,12 +127,24 @@ public class MainActivity extends AppCompatActivity {
                 String inputText = inputField.getText().toString().trim();
                 if (inputText.isEmpty()) {
                     Toast.makeText(this, "Bitte Artikel-Nr scannen", Toast.LENGTH_SHORT).show();
+                    setArtikelFieldRed(true);
                     return true;
                 }
+
+                setArtikelFieldRed(false);
                 new Thread(() -> makeArtikelRequest(inputText)).start();
                 return true;
             }
             return false;
+        });
+
+        // Clear red warning as soon as user starts correcting the Artikel-Nr
+        inputField.addTextChangedListener(new TextWatcher() {
+            @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
+                setArtikelFieldRed(false);
+            }
+            @Override public void afterTextChanged(Editable s) { }
         });
 
         // Undo/reset button inside Artikel-Nr field (your existing behavior)
@@ -114,34 +158,38 @@ public class MainActivity extends AppCompatActivity {
         inputField.requestFocus();
     }
 
+    // Minimal visual feedback: turn Artikel-Nr field red if input/lookup is invalid
+    private void setArtikelFieldRed(boolean red) {
+        if (inputField == null) return;
+        Drawable bg = inputField.getBackground();
+        if (bg == null) return;
+
+        bg = bg.mutate();
+        if (red) {
+            bg.setColorFilter(Color.RED, PorterDuff.Mode.SRC_ATOP);
+        } else {
+            bg.clearColorFilter();
+        }
+        inputField.invalidate();
+    }
+
     private void clearAllAndFocus() {
         inputField.setText("");
+        setArtikelFieldRed(false);
         nameField.setText("");
         meField.setText("");
         bestandField.setText("");
         mengeField.setText("");
 
-        suppressNextJump = true;
         currentLagerItems.clear();
         lagerAdapter.notifyDataSetChanged();
-        suppressNextJump = false;
 
         inputField.requestFocus();
-    }
-
-    private void showKeyboard(EditText field) {
-        field.post(() -> {
-            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-            if (imm != null) imm.showSoftInput(field, InputMethodManager.SHOW_IMPLICIT);
-        });
-    }
-
-    private void openSpinnerAutomatically() {
-        lagerSpinner.post(() -> lagerSpinner.performClick());
+        showKeyboard(inputField);
     }
 
     // ----------- 1) GET /artikel -----------
-    private void makeArtikelRequest(String textToSend) {
+    void makeArtikelRequest(String textToSend) {
         HttpURLConnection connection = null;
 
         try {
@@ -166,9 +214,10 @@ public class MainActivity extends AppCompatActivity {
             Log.i(TAG, "HTTP " + responseCode + " body: " + responseBody);
 
             if (responseCode >= 400) {
-                runOnUiThread(() ->
-                        Toast.makeText(this, "Server-Fehler HTTP " + responseCode, Toast.LENGTH_LONG).show()
-                );
+                runOnUiThread(() -> {
+                    Toast.makeText(this, "Server-Fehler HTTP " + responseCode, Toast.LENGTH_LONG).show();
+                    setArtikelFieldRed(true);
+                });
                 return;
             }
 
@@ -210,9 +259,15 @@ public class MainActivity extends AppCompatActivity {
                 }
                 suppressNextJump = false;
 
+                if (!currentLagerItems.isEmpty()) {
+                    setArtikelFieldRed(false);
+                }
+
                 // 0 -> toast, 1 -> auto-select + go nach, 2+ -> open dropdown
                 if (currentLagerItems.isEmpty()) {
                     Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
+                    // DO NOT mark Artikel-Nr red here, because Artikel-Nr may be valid.
+                    setArtikelFieldRed(false);
                 } else if (currentLagerItems.size() == 1) {
                     lagerSpinner.setSelection(0, false);
                     bestandField.requestFocus();
@@ -220,19 +275,70 @@ public class MainActivity extends AppCompatActivity {
                 } else {
                     openSpinnerAutomatically();
                 }
+
             });
 
         } catch (Exception e) {
             Log.e(TAG, "HTTP/JSON Exception", e);
-            runOnUiThread(() ->
-                    Toast.makeText(this, "Ungültig: " + e.getMessage(), Toast.LENGTH_LONG).show()
-            );
+            runOnUiThread(() -> {
+                Toast.makeText(this, "Ungültig: " + e.getMessage(), Toast.LENGTH_LONG).show();
+                setArtikelFieldRed(true);
+            });
         } finally {
             if (connection != null) connection.disconnect();
         }
     }
 
     // ----------- 2) POST /umbuchung -----------
+    private void postLagernr(String nachText) {
+        HttpURLConnection connection = null;
+
+        try {
+            String targetUrl = "http://10.0.20.26:8080/lagernr";
+            URL url = new URL(targetUrl);
+
+            connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setConnectTimeout(7000);
+            connection.setReadTimeout(7000);
+            connection.setDoOutput(true);
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
+
+            // JSON body: {"lagernr":"ah123"}
+            JSONObject body = new JSONObject();
+            body.put("lagernr", nachText);
+
+            byte[] out = body.toString().getBytes(StandardCharsets.UTF_8);
+            try (OutputStream os = connection.getOutputStream()) {
+                os.write(out);
+            }
+
+            int responseCode = connection.getResponseCode();
+
+            InputStream stream = (responseCode >= 400)
+                    ? connection.getErrorStream()
+                    : connection.getInputStream();
+
+            String responseBody = readAll(stream);
+            Log.i(TAG, "POST /lagernr HTTP " + responseCode + " body: " + responseBody);
+
+            if (responseCode >= 400) {
+                runOnUiThread(() ->
+                        Toast.makeText(this, "lagernr Fehler HTTP " + responseCode, Toast.LENGTH_SHORT).show()
+                );
+            }
+
+        } catch (Exception e) {
+            Log.e(TAG, "POST /lagernr Exception", e);
+            runOnUiThread(() ->
+                    Toast.makeText(this, "lagernr POST Fehler: " + e.getMessage(), Toast.LENGTH_SHORT).show()
+            );
+        } finally {
+            if (connection != null) connection.disconnect();
+        }
+    }
+
+
     private void sendUmbuchungPost() {
         HttpURLConnection connection = null;
 
@@ -252,11 +358,11 @@ public class MainActivity extends AppCompatActivity {
                 return;
             }
             if (von.isEmpty()) {
-                runOnUiThread(() -> Toast.makeText(this, "\"von\" fehlt", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> Toast.makeText(this, "Von Lager fehlt", Toast.LENGTH_SHORT).show());
                 return;
             }
             if (nach.isEmpty()) {
-                runOnUiThread(() -> Toast.makeText(this, "\"nach\" fehlt", Toast.LENGTH_SHORT).show());
+                runOnUiThread(() -> Toast.makeText(this, "Nach Lager fehlt", Toast.LENGTH_SHORT).show());
                 return;
             }
             if (mengeRaw.isEmpty()) {
@@ -267,75 +373,79 @@ public class MainActivity extends AppCompatActivity {
             double menge;
             try {
                 menge = Double.parseDouble(mengeRaw);
-            } catch (NumberFormatException nfe) {
-                runOnUiThread(() -> Toast.makeText(this, "Menge ist ungültig", Toast.LENGTH_SHORT).show());
+            } catch (Exception e) {
+                runOnUiThread(() -> Toast.makeText(this, "Menge ungültig", Toast.LENGTH_SHORT).show());
                 return;
             }
 
-            String targetUrl = "http://10.0.20.26:8080/umbuchung";
-            Log.i(TAG, "POST to: " + targetUrl);
-
-            // Build JSON body
             JSONObject body = new JSONObject();
             body.put("artnr", artnr);
             body.put("von", von);
             body.put("nach", nach);
             body.put("menge", menge);
 
-            byte[] payload = body.toString().getBytes(StandardCharsets.UTF_8);
-
+            String targetUrl = "http://10.0.20.26:8080/umbuchung";
             URL url = new URL(targetUrl);
+
             connection = (HttpURLConnection) url.openConnection();
             connection.setRequestMethod("POST");
             connection.setConnectTimeout(7000);
             connection.setReadTimeout(7000);
             connection.setDoOutput(true);
-            connection.setRequestProperty("Content-Type", "application/json; charset=UTF-8");
-            connection.setRequestProperty("Accept", "application/json");
+            connection.setRequestProperty("Content-Type", "application/json; charset=utf-8");
 
+            byte[] out = body.toString().getBytes(StandardCharsets.UTF_8);
             try (OutputStream os = connection.getOutputStream()) {
-                os.write(payload);
+                os.write(out);
             }
 
             int responseCode = connection.getResponseCode();
+
             InputStream stream = (responseCode >= 400)
                     ? connection.getErrorStream()
                     : connection.getInputStream();
 
             String responseBody = readAll(stream);
-            Log.i(TAG, "Umbuchung HTTP " + responseCode + " body: " + responseBody);
+            Log.i(TAG, "POST HTTP " + responseCode + " body: " + responseBody);
 
             runOnUiThread(() -> {
                 if (responseCode >= 400) {
-                    Toast.makeText(this, "Umbuchung Fehler HTTP " + responseCode, Toast.LENGTH_LONG).show();
+                    Toast.makeText(this, "POST Fehler HTTP " + responseCode, Toast.LENGTH_LONG).show();
                 } else {
                     Toast.makeText(this, "Umbuchung OK", Toast.LENGTH_SHORT).show();
-                    // Optional: clear only user-input fields after success
-                    // bestandField.setText("");
-                    // mengeField.setText("");
+                    clearAllAndFocus();
                 }
             });
 
         } catch (Exception e) {
-            Log.e(TAG, "Umbuchung Exception", e);
-            runOnUiThread(() ->
-                    Toast.makeText(this, "Umbuchung Fehler: " + e.getMessage(), Toast.LENGTH_LONG).show()
-            );
+            Log.e(TAG, "POST Exception", e);
+            runOnUiThread(() -> Toast.makeText(this, "POST Fehler: " + e.getMessage(), Toast.LENGTH_LONG).show());
         } finally {
             if (connection != null) connection.disconnect();
         }
     }
 
-    private String readAll(InputStream stream) throws Exception {
-        if (stream == null) return "";
-        BufferedReader in = new BufferedReader(new InputStreamReader(stream, StandardCharsets.UTF_8));
+    private void openSpinnerAutomatically() {
+        // "Perform click" on spinner so dropdown opens
+        lagerSpinner.post(() -> lagerSpinner.performClick());
+    }
+
+    private void showKeyboard(EditText editText) {
+        editText.requestFocus();
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm != null) imm.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT);
+    }
+
+    private String readAll(InputStream is) throws Exception {
+        if (is == null) return "";
+        BufferedReader br = new BufferedReader(new InputStreamReader(is, StandardCharsets.UTF_8));
         StringBuilder sb = new StringBuilder();
         String line;
-        while ((line = in.readLine()) != null) sb.append(line);
-        in.close();
+        while ((line = br.readLine()) != null) sb.append(line);
         return sb.toString();
     }
 
+    // ----------- Helper Model for spinner -----------
     private class LagerItem {
         final String lagernr;
         final double bestand;
@@ -347,8 +457,6 @@ public class MainActivity extends AppCompatActivity {
 
         @Override
         public String toString() {
-            // Shown in spinner (you already aligned it earlier with monospace formatting in adapter version;
-            // keeping a readable fallback here)
             return String.format("%-12s    %s", lagernr.trim(), df.format(bestand));
         }
     }
