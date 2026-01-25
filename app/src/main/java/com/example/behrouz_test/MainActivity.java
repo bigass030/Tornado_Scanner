@@ -183,7 +183,7 @@ public class MainActivity extends AppCompatActivity {
 
     // ---------- last try UI ----------
     private void setLastTry(boolean success, String artnr, String von, String nach, String menge, String time) {
-        final String text = artnr + "-" + von + "-" + nach + "-" + menge + "-" + time;
+        final String text = artnr + "|" + von + "|" + nach + "|" + menge + "|" + time;
 
         runOnUiThread(() -> {
             if (lastTryText != null) lastTryText.setText(text);
