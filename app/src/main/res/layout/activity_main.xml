@@ -24,7 +24,7 @@
                 android:orientation="horizontal"
                 android:layout_marginBottom="16dp"
                 android:padding="12dp"
-                android:background="#EEEEEE">
+                android:background="#E3F2FD">
 
                 <TextView
                     android:id="@+id/lastTryText"
@@ -273,3 +273,5 @@
     </ScrollView>
 
 </LinearLayout>
+
+

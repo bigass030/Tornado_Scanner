@@ -1,16 +1,15 @@
 package com.example.behrouz_test;
 
-import android.provider.Settings;
-
 import android.content.Context;
-
 import android.graphics.Color;
 import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
+import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
+import android.provider.Settings;
 import android.text.Editable;
 import android.text.TextWatcher;
-
-import android.os.Bundle;
 import android.util.Log;
 import android.view.WindowManager;
 import android.view.inputmethod.EditorInfo;
@@ -31,6 +30,7 @@ import java.io.BufferedReader;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.lang.reflect.Field;
 import java.net.HttpURLConnection;
 import java.net.URL;
 import java.net.URLEncoder;
@@ -46,16 +46,18 @@ public class MainActivity extends AppCompatActivity {
 
     private static final String TAG = "HTTP_CALL";
 
-    private EditText inputField;
+    private EditText inputField;     // ARTNR
     private EditText nameField;
     private EditText meField;
-    private EditText bestandField; // NACH
+    private EditText bestandField;   // NACH
     private EditText mengeField;
 
-    private Spinner lagerSpinner;
+    private Spinner lagerSpinner;    // VON
 
     private TextView lastTryText;
     private TextView lastTryMark;
+
+    private ImageButton playButton;
 
     private final List<LagerItem> currentLagerItems = new ArrayList<>();
     private ArrayAdapter<LagerItem> lagerAdapter;
@@ -63,12 +65,25 @@ public class MainActivity extends AppCompatActivity {
     // Prevent “auto-selected first item” from triggering jump immediately after loading data
     private boolean suppressNextJump = false;
 
-    // For pretty numbers in spinner label
     private final DecimalFormat df = new DecimalFormat("0.##");
-
     private String lastNachSent = "";
-
     private final SimpleDateFormat timeFmt = new SimpleDateFormat("HH:mm:ss", Locale.getDefault());
+
+    // -------- Spinner popup control --------
+    private volatile boolean spinnerPopupOpen = false;
+
+    // NEW: true after popup opens; consumed on first user selection while open
+    private volatile boolean awaitingSpinnerPick = false;
+
+    // Remember NACH focusability while popup is open
+    private boolean nachWasFocusable = true;
+    private boolean nachWasFocusableInTouch = true;
+
+    // Remember ARTNR focusability while popup is open (prevents focus restoring to ARTNR)
+    private boolean artnrWasFocusable = true;
+    private boolean artnrWasFocusableInTouch = true;
+
+    private final Handler ui = new Handler(Looper.getMainLooper());
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -85,70 +100,94 @@ public class MainActivity extends AppCompatActivity {
         lastTryText = findViewById(R.id.lastTryText);
         lastTryMark = findViewById(R.id.lastTryMark);
 
+        playButton = findViewById(R.id.playButton);
+
+        // Initial hide is fine
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
+
+        lagerAdapter = new ArrayAdapter<>(this, R.layout.spinner_item, currentLagerItems);
+        lagerAdapter.setDropDownViewResource(R.layout.spinner_dropdown_item);
+        lagerSpinner.setAdapter(lagerAdapter);
+
+        // Best effort dismiss hook (not relied upon)
+        hookSpinnerDismissListener();
+
+        // When spinner opens (user tap) -> mark popup as open + lock focus stealing
+        lagerSpinner.setOnTouchListener((v, event) -> {
+            if (event.getAction() == android.view.MotionEvent.ACTION_DOWN) {
+                onSpinnerPopupOpening();
+            }
+            return false;
+        });
+
+        // CRITICAL: jump to NACH after the FIRST selection event while popup is open
+        lagerSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
+            @Override
+            public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
+                if (suppressNextJump) return;
+
+                // Only react while popup is open and we are awaiting a pick
+                if (!spinnerPopupOpen) return;
+                if (!awaitingSpinnerPick) return;
+
+                // Consume the pick (so it only happens once)
+                awaitingSpinnerPick = false;
+
+                // Force focus to NACH after selection
+                forceJumpToNachAfterSpinnerSelection();
+            }
+
+            @Override public void onNothingSelected(android.widget.AdapterView<?> parent) { }
+        });
+
+        // Ensure tapping fields always shows keyboard
+        bestandField.setOnClickListener(v -> showKeyboardHard(bestandField));
+        mengeField.setOnClickListener(v -> showKeyboardHard(mengeField));
+        inputField.setOnClickListener(v -> showKeyboardHard(inputField));
+
         // Clear red warning as soon as user starts correcting NACH
         bestandField.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                setNachFieldRed(false);
-            }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { setNachFieldRed(false); }
             @Override public void afterTextChanged(Editable s) { }
         });
 
         // Clear red warning as soon as user starts correcting MENGE
         mengeField.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                setMengeFieldRed(false);
-            }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { setMengeFieldRed(false); }
             @Override public void afterTextChanged(Editable s) { }
         });
 
+        // NACH: when focus leaves -> POST /lagernr ; when focus enters -> show keyboard
         bestandField.setOnFocusChangeListener((v, hasFocus) -> {
             if (!hasFocus) {
                 String nachText = bestandField.getText().toString().trim();
-
                 if (nachText.isEmpty()) return;
-
                 if (nachText.equals(lastNachSent)) return;
-                lastNachSent = nachText;
 
+                lastNachSent = nachText;
                 new Thread(() -> postLagernr(nachText)).start();
             } else {
-                showKeyboard(bestandField);
+                if (!spinnerPopupOpen) showKeyboardHard(bestandField);
             }
         });
 
-        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_ALWAYS_HIDDEN);
-
-        lagerAdapter = new ArrayAdapter<>(this, android.R.layout.simple_spinner_dropdown_item, currentLagerItems);
-        lagerSpinner.setAdapter(lagerAdapter);
-
-        lagerSpinner.setOnItemSelectedListener(new android.widget.AdapterView.OnItemSelectedListener() {
-            @Override
-            public void onItemSelected(android.widget.AdapterView<?> parent, android.view.View view, int position, long id) {
-                if (suppressNextJump) return;
-
-                bestandField.requestFocus();
-                showKeyboard(bestandField);
-            }
-
-            @Override
-            public void onNothingSelected(android.widget.AdapterView<?> parent) { }
-        });
-
+        // Next from NACH -> MENGE
         bestandField.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_NEXT) {
                 mengeField.requestFocus();
-                showKeyboard(mengeField);
+                showKeyboardHard(mengeField);
                 return true;
             }
             return false;
         });
 
         mengeField.setOnFocusChangeListener((v, hasFocus) -> {
-            if (hasFocus) showKeyboard(mengeField);
+            if (hasFocus) showKeyboardHard(mengeField);
         });
 
+        // Artnr scan/enter -> GET /artikel
         inputField.setOnEditorActionListener((v, actionId, event) -> {
             if (actionId == EditorInfo.IME_ACTION_DONE || actionId == EditorInfo.IME_NULL) {
                 String inputText = inputField.getText().toString().trim();
@@ -165,27 +204,184 @@ public class MainActivity extends AppCompatActivity {
             return false;
         });
 
-        // Clear red warning as soon as user starts correcting the Artikel-Nr
         inputField.addTextChangedListener(new TextWatcher() {
             @Override public void beforeTextChanged(CharSequence s, int start, int count, int after) { }
-            @Override public void onTextChanged(CharSequence s, int start, int before, int count) {
-                setArtikelFieldRed(false);
-            }
+            @Override public void onTextChanged(CharSequence s, int start, int before, int count) { setArtikelFieldRed(false); }
             @Override public void afterTextChanged(Editable s) { }
         });
 
         ImageButton clearIconButton = findViewById(R.id.clearIconButton);
         clearIconButton.setOnClickListener(v -> clearAllAndFocus());
 
-        ImageButton playButton = findViewById(R.id.playButton);
-        playButton.setOnClickListener(v -> new Thread(this::sendUmbuchungPost).start());
+        playButton.setOnClickListener(v -> {
+            forceHideKeyboardOnly();
+            new Thread(this::sendUmbuchungPost).start();
+        });
 
         inputField.requestFocus();
     }
 
-    // ---------- last try UI ----------
+    // ===================== Spinner popup open/close handling =====================
+
+    private void onSpinnerPopupOpening() {
+        spinnerPopupOpen = true;
+        awaitingSpinnerPick = true;
+
+        // Prevent NACH and ARTNR from stealing focus while popup is open
+        lockNachFocus(true);
+        lockArtNrFocus(true);
+
+        // Hide keyboard and clear focus
+        forceHideKeyboardOnly();
+        clearEditTextFocus();
+
+        // Put focus onto a non-EditText view so Android doesn't "restore" ARTNR
+        android.view.View root = findViewById(android.R.id.content);
+        if (root != null) {
+            root.setFocusableInTouchMode(true);
+            root.requestFocus();
+        }
+    }
+
+    // Best-effort cleanup. Even if it never fires, the force-jump handles focus.
+    private void onSpinnerPopupDismissed() {
+        spinnerPopupOpen = false;
+        lockNachFocus(false);
+        lockArtNrFocus(false);
+        getWindow().setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_STATE_UNSPECIFIED);
+    }
+
+    /**
+     * OEM-proof focus jump: assert focus twice, and keep ARTNR locked while animations complete.
+     */
+    private void forceJumpToNachAfterSpinnerSelection() {
+        // Keep ARTNR locked so it cannot steal focus during close animation
+        lockArtNrFocus(true);
+        lockNachFocus(false);
+
+        // Attempt 1 (soon after selection)
+        ui.postDelayed(() -> {
+            if (bestandField == null) return;
+
+            bestandField.setFocusable(true);
+            bestandField.setFocusableInTouchMode(true);
+            try { bestandField.setShowSoftInputOnFocus(true); } catch (Throwable ignored) {}
+
+            bestandField.requestFocus();
+            bestandField.requestFocusFromTouch();
+            showKeyboardHard(bestandField);
+        }, 80);
+
+        // Attempt 2 (after many OEMs restore focus)
+        ui.postDelayed(() -> {
+            if (bestandField == null) return;
+
+            bestandField.requestFocus();
+            bestandField.requestFocusFromTouch();
+            showKeyboardHard(bestandField);
+
+            // Now unlock ARTNR again
+            lockArtNrFocus(false);
+
+            // End spinner flow even if dismiss hook is unreliable
+            spinnerPopupOpen = false;
+        }, 550); // adjust 380–650 if needed
+    }
+
+    private void hookSpinnerDismissListener() {
+        try {
+            Field popupField = lagerSpinner.getClass().getDeclaredField("mPopup");
+            popupField.setAccessible(true);
+            Object popup = popupField.get(lagerSpinner);
+            if (popup == null) return;
+
+            try {
+                java.lang.reflect.Method setOnDismiss =
+                        popup.getClass().getMethod("setOnDismissListener", android.widget.PopupWindow.OnDismissListener.class);
+
+                setOnDismiss.invoke(popup, (android.widget.PopupWindow.OnDismissListener) this::onSpinnerPopupDismissed);
+            } catch (NoSuchMethodException ignored) {
+                try {
+                    java.lang.reflect.Method getPopupWindow = popup.getClass().getMethod("getPopupWindow");
+                    Object pw = getPopupWindow.invoke(popup);
+                    if (pw instanceof android.widget.PopupWindow) {
+                        ((android.widget.PopupWindow) pw).setOnDismissListener(this::onSpinnerPopupDismissed);
+                    }
+                } catch (Throwable ignored2) { }
+            }
+        } catch (Throwable ignored) { }
+    }
+
+    private void lockNachFocus(boolean lock) {
+        if (bestandField == null) return;
+
+        if (lock) {
+            nachWasFocusable = bestandField.isFocusable();
+            nachWasFocusableInTouch = bestandField.isFocusableInTouchMode();
+
+            bestandField.setFocusable(false);
+            bestandField.setFocusableInTouchMode(false);
+            bestandField.clearFocus();
+        } else {
+            bestandField.setFocusable(nachWasFocusable);
+            bestandField.setFocusableInTouchMode(nachWasFocusableInTouch);
+        }
+    }
+
+    private void lockArtNrFocus(boolean lock) {
+        if (inputField == null) return;
+
+        if (lock) {
+            artnrWasFocusable = inputField.isFocusable();
+            artnrWasFocusableInTouch = inputField.isFocusableInTouchMode();
+
+            inputField.setFocusable(false);
+            inputField.setFocusableInTouchMode(false);
+            inputField.clearFocus();
+        } else {
+            inputField.setFocusable(artnrWasFocusable);
+            inputField.setFocusableInTouchMode(artnrWasFocusableInTouch);
+        }
+    }
+
+    private void clearEditTextFocus() {
+        if (inputField != null) inputField.clearFocus();
+        if (bestandField != null) bestandField.clearFocus();
+        if (mengeField != null) mengeField.clearFocus();
+        if (nameField != null) nameField.clearFocus();
+        if (meField != null) meField.clearFocus();
+    }
+
+    private void forceHideKeyboardOnly() {
+        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+        if (imm == null) return;
+
+        android.view.View decor = getWindow().getDecorView();
+        imm.hideSoftInputFromWindow(decor.getWindowToken(), 0);
+    }
+
+    // IMPORTANT: no toggleSoftInput() here.
+    private void showKeyboardHard(EditText et) {
+        if (et == null) return;
+
+        et.setFocusable(true);
+        et.setFocusableInTouchMode(true);
+        try { et.setShowSoftInputOnFocus(true); } catch (Throwable ignored) { }
+
+        et.requestFocus();
+        et.requestFocusFromTouch();
+
+        et.post(() -> {
+            InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
+            if (imm == null) return;
+            imm.showSoftInput(et, InputMethodManager.SHOW_IMPLICIT);
+        });
+    }
+
+    // ===================== last try UI =====================
+
     private void setLastTry(boolean success, String artnr, String von, String nach, String menge, String time) {
-        final String text = artnr + "|" + von + "|" + nach + "|" + menge + "|" + time;
+        final String text = artnr + " - " + von + " - " + nach + " - " + menge + " - " + time;
 
         runOnUiThread(() -> {
             if (lastTryText != null) lastTryText.setText(text);
@@ -202,8 +398,15 @@ public class MainActivity extends AppCompatActivity {
         });
     }
 
+    private void setPlayEnabled(boolean enabled) {
+        runOnUiThread(() -> {
+            if (playButton == null) return;
+            playButton.setEnabled(enabled);
+            playButton.setAlpha(enabled ? 1.0f : 0.35f);
+        });
+    }
 
-    // -------------------------------
+    // ===================== red-field helpers =====================
 
     private void setArtikelFieldRed(boolean red) {
         if (inputField == null) return;
@@ -254,11 +457,18 @@ public class MainActivity extends AppCompatActivity {
         currentLagerItems.clear();
         lagerAdapter.notifyDataSetChanged();
 
+        lockNachFocus(false);
+        lockArtNrFocus(false);
+
+        spinnerPopupOpen = false;
+        awaitingSpinnerPick = false;
+
         inputField.requestFocus();
-        showKeyboard(inputField);
+        showKeyboardHard(inputField);
     }
 
-    // ----------- 1) GET /artikel -----------
+    // ===================== 1) GET /artikel =====================
+
     void makeArtikelRequest(String textToSend) {
         HttpURLConnection connection = null;
 
@@ -334,9 +544,9 @@ public class MainActivity extends AppCompatActivity {
                     Toast.makeText(this, "Keine Lagerplätze verfügbar", Toast.LENGTH_SHORT).show();
                     setArtikelFieldRed(false);
                 } else if (currentLagerItems.size() == 1) {
-                    lagerSpinner.setSelection(0, false);
-                    bestandField.requestFocus();
-                    showKeyboard(bestandField);
+                    lockNachFocus(false);
+                    lockArtNrFocus(false);
+                    showKeyboardHard(bestandField);
                 } else {
                     openSpinnerAutomatically();
                 }
@@ -353,7 +563,14 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ----------- 2) POST /lagernr -----------
+    private void openSpinnerAutomatically() {
+        // We still want the "awaiting pick" behavior for auto-open
+        onSpinnerPopupOpening();
+        lagerSpinner.post(() -> lagerSpinner.performClick());
+    }
+
+    // ===================== 2) POST /lagernr =====================
+
     private void postLagernr(String nachText) {
         HttpURLConnection connection = null;
 
@@ -409,11 +626,12 @@ public class MainActivity extends AppCompatActivity {
         }
     }
 
-    // ----------- 3) POST /umbuchung -----------
+    // ===================== 3) POST /umbuchung =====================
+
     private void sendUmbuchungPost() {
         HttpURLConnection connection = null;
+        setPlayEnabled(false);
 
-        // Capture what the user tried + time (always)
         final String artnrTry = inputField.getText().toString().trim();
 
         LagerItem selected = (LagerItem) lagerSpinner.getSelectedItem();
@@ -506,11 +724,7 @@ public class MainActivity extends AppCompatActivity {
             String responseBody = readAll(stream);
             Log.i(TAG, "POST /umbuchung HTTP " + responseCode + " body: " + responseBody);
 
-            if (responseCode >= 400) {
-                setLastTry(false, artnrTry, vonTry, nachTry, mengeTry, timeTry);
-            } else {
-                setLastTry(true, artnrTry, vonTry, nachTry, mengeTry, timeTry);
-            }
+            setLastTry(responseCode < 400, artnrTry, vonTry, nachTry, mengeTry, timeTry);
 
             runOnUiThread(() -> {
                 if (responseCode >= 400) {
@@ -529,17 +743,8 @@ public class MainActivity extends AppCompatActivity {
             );
         } finally {
             if (connection != null) connection.disconnect();
+            setPlayEnabled(true);
         }
-    }
-
-    private void openSpinnerAutomatically() {
-        lagerSpinner.post(() -> lagerSpinner.performClick());
-    }
-
-    private void showKeyboard(EditText editText) {
-        editText.requestFocus();
-        InputMethodManager imm = (InputMethodManager) getSystemService(Context.INPUT_METHOD_SERVICE);
-        if (imm != null) imm.showSoftInput(editText, InputMethodManager.SHOW_IMPLICIT);
     }
 
     private String readAll(InputStream is) throws Exception {
